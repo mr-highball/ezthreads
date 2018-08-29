@@ -1,4 +1,4 @@
-# exthreads
+# ezthreads
 a simple and safe way to work with threads
 
 To request features or report a bug, open a github issue with details/steps to reproduce
