@@ -177,7 +177,223 @@ type
   *)
   TEZArgs = array of TEZArg;
 
+  { TEZThreadImpl }
+  (*
+    base implementation of an IEZThread, also realizes settings and events
+    to keep things together
+  *)
+  TEZThreadImpl = class(
+    TInterfacedObject,
+    IEZThreadEvents,
+    IEZThreadSettings,
+    IEZThread
+  )
+  strict private
+    FMaxRunTime: Cardinal;
+    FOnStart,
+    FOnStop: TThreadMethod;
+    FOnStartCall,
+    FOnStopCall: TThreadCallback;
+    FArgs: TEZArgs;
+    function GetMaxRunTime: Cardinal;
+    function GetOnStart: TThreadMethod;
+    function GetOnStartCall: TThreadCallback;
+    function GetOnStop: TThreadMethod;
+    function GetOnStopCall: TThreadCallback;
+    function GetThread: IEZThread;
+    function GetSettings: IEZThreadSettings;
+    function GetEvents: IEZThreadEvents;
+  strict protected
+  public
+    //events
+    property OnStart : TThreadMethod read GetOnStart;
+    property OnStartCallback : TThreadCallback read GetOnStartCall;
+    property OnStop : TThreadMethod read GetOnStop;
+    property OnStopCallback : TThreadCallback read GetOnStopCall;
+  public
+    //properties
+    property MaxRuntime : Cardinal read GetMaxRunTime;
+    property Thread : IEZThread read GetThread;
+    property Settings:IEZThreadSettings read GetSettings;
+    property Events:IEZThreadEvents read GetEvents;
+
+    //methods
+    function UpdateOnStart(Const AOnStart:TThreadMethod):IEZThreadEvents;
+    function UpdateOnStartCallback(Const AOnStart:TThreadCallback):IEZThreadEvents;
+    function UpdateOnStop(Const AOnStop:TThreadMethod):IEZThreadEvents;
+    function UpdateOnStopCallback(Const AOnStop:TThreadCallback):IEZThreadEvents;
+    function UpdateMaxRuntime(Const ARuntime:Cardinal):IEZThreadSettings;
+    function AddArg(Const AName:String;Const AArg:Variant;
+      OnFinish:TArgCleanupCallback):IEZThread;overload;
+    function AddArg(Const AName:String;Const AArg:Variant;
+      OnFinish:TArgCleanupMethod):IEZThread;overload;
+    function AddArg(Const AName:String;Const AArg:Variant):IEZThread;overload;
+    function AddArgs(Const ANames:TStringArray;
+      Const AArgs:TVariantArray):IEZThread;
+    function Setup(Const AStart:TThreadCallback;
+      Const AError:TThreadCallback;Const ASuccess:TThreadCallback):IEZThread;overload;
+    function Setup(Const AStart:TThreadCallback):IEZThread;overload;
+    function Setup(Const AStart:TThreadMethod;
+      Const AError:TThreadMethod;Const ASuccess:TThreadMethod):IEZThread;overload;
+    function Setup(Const AStart:TThreadMethod):IEZThread;overload;
+    procedure Start;
+    procedure Stop;
+    constructor Create;virtual;
+  end;
+
 implementation
+
+{ TEZThreadImpl }
+
+function TEZThreadImpl.GetMaxRunTime: Cardinal;
+begin
+  Result:=FMaxRunTime;
+end;
+
+function TEZThreadImpl.GetOnStart: TThreadMethod;
+begin
+  Result:=FOnStart;
+end;
+
+function TEZThreadImpl.GetOnStartCall: TThreadCallback;
+begin
+  Result:=FOnStartCall;
+end;
+
+function TEZThreadImpl.GetOnStop: TThreadMethod;
+begin
+  Result:=FOnStop;
+end;
+
+function TEZThreadImpl.GetOnStopCall: TThreadCallback;
+begin
+  Result:=FOnStopCall;
+end;
+
+function TEZThreadImpl.GetThread: IEZThread;
+begin
+  Result:=Self as IEZThread;
+end;
+
+function TEZThreadImpl.GetSettings: IEZThreadSettings;
+begin
+  Result:=Self as IEZThreadSettings;
+end;
+
+function TEZThreadImpl.GetEvents: IEZThreadEvents;
+begin
+  Result:=Self as IEZThreadEvents;
+end;
+
+function TEZThreadImpl.UpdateOnStart(const AOnStart: TThreadMethod
+  ): IEZThreadEvents;
+begin
+  FOnStart:=AOnStart;
+  Result:=GetEvents;
+end;
+
+function TEZThreadImpl.UpdateOnStartCallback(const AOnStart: TThreadCallback
+  ): IEZThreadEvents;
+begin
+  FOnStartCall:=AOnStart;
+  Result:=GetEvents;
+end;
+
+function TEZThreadImpl.UpdateOnStop(const AOnStop: TThreadMethod
+  ): IEZThreadEvents;
+begin
+  FOnStop:=AOnStop;
+  Result:=GetEvents;
+end;
+
+function TEZThreadImpl.UpdateOnStopCallback(const AOnStop: TThreadCallback
+  ): IEZThreadEvents;
+begin
+  FOnStopCall:=AOnStop;
+  Result:=GetEvents;
+end;
+
+function TEZThreadImpl.UpdateMaxRuntime(const ARuntime: Cardinal
+  ): IEZThreadSettings;
+begin
+  FMaxRunTime:=ARunTime;
+  Result:=GetSettings;
+end;
+
+function TEZThreadImpl.AddArg(const AName: String; const AArg: Variant;
+  OnFinish: TArgCleanupCallback): IEZThread;
+begin
+  //todo
+  Result:=GetThread;
+end;
+
+function TEZThreadImpl.AddArg(const AName: String; const AArg: Variant;
+  OnFinish: TArgCleanupMethod): IEZThread;
+begin
+  //todo
+  Result:=GetThread;
+end;
+
+function TEZThreadImpl.AddArg(const AName: String; const AArg: Variant
+  ): IEZThread;
+begin
+  Result:=AddArg(AName,AArg,TArgCleanupCallback(nil));
+end;
+
+function TEZThreadImpl.AddArgs(const ANames: TStringArray;
+  const AArgs: TVariantArray): IEZThread;
+var
+  I:Integer;
+begin
+  //assumes arrays are equal
+  for I:=0 to High(AArgs) do
+    AddArg(ANames[I],AArgs[I]);
+  Result:=GetThread;
+end;
+
+function TEZThreadImpl.Setup(const AStart: TThreadCallback;
+  const AError: TThreadCallback; const ASuccess: TThreadCallback): IEZThread;
+begin
+  //todo
+  Result:=GetThread;
+end;
+
+function TEZThreadImpl.Setup(const AStart: TThreadCallback): IEZThread;
+begin
+  Result:=Setup(AStart,TThreadCallback(nil),TThreadCallback(nil));
+end;
+
+function TEZThreadImpl.Setup(const AStart: TThreadMethod;
+  const AError: TThreadMethod; const ASuccess: TThreadMethod): IEZThread;
+begin
+  //todo
+  Result:=GetThread;
+end;
+
+function TEZThreadImpl.Setup(const AStart: TThreadMethod): IEZThread;
+begin
+  Result:=Setup(AStart,TThreadMethod(nil),TThreadMethod(nil));
+end;
+
+procedure TEZThreadImpl.Start;
+begin
+  //todo
+end;
+
+procedure TEZThreadImpl.Stop;
+begin
+  //todo
+end;
+
+constructor TEZThreadImpl.Create;
+begin
+  FMaxRunTime:=0;
+  FOnStart:=nil;
+  FOnStop:=nil;
+  FOnStartCall:=nil;
+  FOnStopCall:=nil;
+  SetLength(FArgs,0);
+end;
 
 { TEZArg }
 
