@@ -294,9 +294,6 @@ type
         FSuccess: TThreadMethod;
         FSuccessCall: TThreadCallback;
         FSuccessNestCall: TThreadNestedCallback;
-        (*FStart: TThreadMethod;
-        FStartCall: TThreadCallback;
-        FStartNestCall: TThreadCallback;*)
         FThread: IEZThread;
         function GetThread: IEZThread;
         procedure SetThread(Const AValue: IEZThread);
@@ -724,8 +721,8 @@ end;
 
 procedure TEZThreadImpl.Start;
 const
-  MAX_RUNTIME='max_runtime';
-  THREAD='internal_thread';
+  MAX_RUNTIME='{9957C25D-BB0B-4C64-BD40-A97B8687EFF8}';
+  THREAD='{48545744-5EBF-4C21-B220-CD0CBAB7F3C1}';
 var
   LIntThread:TInternalThread;
   LThread:IEZThread;
@@ -742,7 +739,7 @@ var
   begin
     LElapsed:=0;
     LMax:=AThread[MAX_RUNTIME];
-    LLIntThread:=TInternalThread(Pointer(NativeInt(AThread[THREAD]))^);
+    LLIntThread:=TInternalThread({%H-}Pointer(NativeInt(AThread[THREAD]))^);
 
     //if we're finished, nothing to do
     if LLIntThread.Finished then
@@ -782,7 +779,7 @@ var
       FOnStopNestCall(GetThread);
 
     //free thread after events to avoid last reference
-    TInternalThread(Pointer(NativeInt(AThread[THREAD]))^).Free;
+    TInternalThread({%H-}Pointer(NativeInt(AThread[THREAD]))^).Free;
   end;
 
 begin
@@ -810,16 +807,20 @@ begin
   //start the internal thread
   LIntThread.Execute;
 
+  //check to make sure we are not in the recursive start call for monitor
+  if @FStartNestCall=@CheckRunTime then
+    Exit;
+
   //create an ezthread for monitoring length of runtime and
   //to handle the freeing of the thread when complete
   LThread:=TEZThreadImpl.Create;
   LThread
     .AddArg(MAX_RUNTIME,FMaxRunTime)
-    .AddArg(THREAD,@LIntThread)
+    .AddArg(THREAD,{%H-}NativeInt(@LIntThread))
     .Events
-      .UpdateOnStartNestedCallback(CheckRunTime)
       .UpdateOnStopNestedCallback(FreeThread)
       .Thread
+    .Setup(CheckRunTime)
     .Start;
 end;
 

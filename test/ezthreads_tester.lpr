@@ -85,6 +85,14 @@ var
 
   procedure Start(Const AThread:IEZThread);
   begin
+    //note that we can't use writeln without sync because the start
+    //runs in a separate thread than the caller's
+    if MainThreadID = TThread.CurrentThread.ThreadID then
+    begin
+      WriteLn('TestHelloWorld::ThreadStart::failure, this should have been executed in a different thread id');
+      Exit;
+    end;
+
     //fetch the argument by name and modify it with info showing we
     //were in a different thread
     AThread.AddArg(
