@@ -26,6 +26,7 @@
   to be included, otherwise you can still use standard callbacks
   or method procedures
 *)
+{$mode delphi}{$H+}
 {$modeswitch nestedprocvars}
 
 program ezthreads_tester;
@@ -84,14 +85,6 @@ var
 
   procedure Start(Const AThread:IEZThread);
   begin
-    //note that we can't use writeln without sync because the onstart
-    //runs in a separate thread than the caller's
-    if MainThreadID = TThread.CurrentThread.ThreadID then
-    begin
-      WriteLn('TestHelloWorld::ThreadStart::failure, this should have been executed in a different thread id');
-      Exit;
-    end;
-
     //fetch the argument by name and modify it with info showing we
     //were in a different thread
     AThread.AddArg(
@@ -116,15 +109,16 @@ begin
       .UpdateMaxRuntime(MAX_RUN)
       .Thread
     .Events
-      .UpdateOnStopNestedCallback(@UpdateWaiting)
+      .UpdateOnStopNestedCallback(UpdateWaiting)
       .Thread
     .AddArg(NAME,'hello world from an ezthread!')
-    .Setup(@Start)
+    .Setup(Start)
     .Start;
 
   //simple loop to see when our thread finishes. this would normally not be
   //necessary to wait in the context of this method, but to make sure
-  //our tests are run in order this was added
+  //our tests are run in order this was added. also if the thread was aborted
+  //then the OnError method(s) would be called
   while Waiting do
   begin
     Sleep(SLEEP_TIME);
