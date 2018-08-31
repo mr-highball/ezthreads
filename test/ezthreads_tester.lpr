@@ -31,6 +31,7 @@
 program ezthreads_tester;
 
 uses
+  Classes,
   SysUtils,
   ezthreads;
 
@@ -75,13 +76,31 @@ var
   procedure UpdateWaiting(Const AThread:IEZThread);
   begin
     //let main thread know we are done processing by updating a local var
+    //also note that this is method is called in the callers thread
+    //so we can
     Waiting:=False;
+    WriteLn(AThread[NAME]);
   end;
 
   procedure Start(Const AThread:IEZThread);
   begin
-    //fetch the argument by name and print it to the screen
-    WriteLn('TestHelloWorld::ThreadStart::Data::' + AThread[NAME]);
+    //note that we can't use writeln without sync because the onstart
+    //runs in a separate thread than the caller's
+    if MainThreadID = TThread.CurrentThread.ThreadID then
+    begin
+      WriteLn('TestHelloWorld::ThreadStart::failure, this should have been executed in a different thread id');
+      Exit;
+    end;
+
+    //fetch the argument by name and modify it with info showing we
+    //were in a different thread
+    AThread.AddArg(
+      NAME,
+      AThread[NAME] + Format(
+        ' MainThreadID:%d EZThreadID:%d',
+        [MainThreadID,TThread.CurrentThread.ThreadID]
+      )
+    );
   end;
 
 begin
@@ -103,7 +122,9 @@ begin
     .Setup(@Start)
     .Start;
 
-  //simple loop to see when our thread finishes
+  //simple loop to see when our thread finishes. this would normally not be
+  //necessary to wait in the context of this method, but to make sure
+  //our tests are run in order this was added
   while Waiting do
   begin
     Sleep(SLEEP_TIME);
