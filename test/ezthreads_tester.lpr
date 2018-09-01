@@ -32,6 +32,10 @@
 program ezthreads_tester;
 
 uses
+  {$ifdef unix}
+  cthreads,
+  cmem,
+  {$endif}
   Classes,
   SysUtils,
   ezthreads;

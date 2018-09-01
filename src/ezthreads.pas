@@ -308,11 +308,11 @@ type
         (*
           all possible requested methods to run during Execute
         *)
-        property Start : TThreadMethod read FStart write FStart;
+        property StartMethod : TThreadMethod read FStart write FStart;
         property StartCallback : TThreadCallback read FStartCall write FStartCall;
         property StartNestedCallback : TThreadNestedCallback read FStartNestCall write FStartNestCall;
 
-        property Error : TThreadMethod read FError write FError;
+        property ErrorMethod : TThreadMethod read FError write FError;
         property ErrorCallback : TThreadCallback read FErrorCall write FErrorCall;
         property ErrorNestedCallback : TThreadNestedCallback read FErrorNestCall write FErrorNestCall;
 
@@ -382,6 +382,7 @@ type
     procedure Start;
     procedure Stop;
     constructor Create;virtual;
+    destructor Destroy; override;
   end;
 
   (*
@@ -413,7 +414,7 @@ begin
   if Assigned(FThread) then
   begin
     try
-      //attempt to run all applicable start methods
+      //attempt to run all applicable StartMethod methods
       if Assigned(FStart) then
         FStart(FThread);
       if Assigned(FStartCall) then
@@ -430,10 +431,10 @@ begin
         FSuccessNestCall(FThread);
     except on E:Exception do
     begin
-      //todo - expand the error methods to accept either a TException or
-      //just an error message string
+      //todo - expand the ErrorMethod methods to accept either a TException or
+      //just an ErrorMethod message string
 
-      //guarantee all error methods are called with try..finally
+      //guarantee all ErrorMethod methods are called with try..finally
       if Assigned(FError) then
         try
           FError(FThread);
@@ -723,6 +724,7 @@ procedure TEZThreadImpl.Start;
 const
   MAX_RUNTIME='{9957C25D-BB0B-4C64-BD40-A97B8687EFF8}';
   THREAD='{48545744-5EBF-4C21-B220-CD0CBAB7F3C1}';
+  EZ_THREAD='{682A4183-E70E-417F-8786-1E1EDC930F95}';
 var
   LIntThread:TInternalThread;
   LThread:IEZThread;
@@ -766,23 +768,40 @@ var
   end;
 
   (*
-    frees the local internal thread and raised stop event
+    responsible for raising any stop event
+  *)
+  procedure RaiseStop(Const AThread:IEZThread);
+  var
+    LLThread:TEZThreadImpl;
+    LThreadIntf:IEZThread;
+  begin
+    //capture reference to self
+    LLThread:=TEZThreadImpl({%H-}Pointer(NativeInt(AThread[EZ_THREAD]))^);
+    if not Assigned(LLThread) then
+      Exit;
+    LThreadIntf:=IEZThread(LLThread);
+    LThreadIntf._AddRef;
+    //raise events with captured reference
+    if Assigned(FOnStop) then
+      FOnStop(LLThread);
+    if Assigned(FOnStopCall) then
+      FOnStopCall(LLThread);
+    if Assigned(FOnStopNestCall) then
+      FOnStopNestCall(LLThread);
+    LThreadIntf._Release;
+  end;
+
+  (*
+    frees the local internal thread
   *)
   procedure FreeThread(Const AThread:IEZThread);
   begin
-    //raise events
-    if Assigned(FOnStop) then
-      FOnStop(GetThread);
-    if Assigned(FOnStopCall) then
-      FOnStopCall(GetThread);
-    if Assigned(FOnStopNestCall) then
-      FOnStopNestCall(GetThread);
-
     //free thread after events to avoid last reference
     TInternalThread({%H-}Pointer(NativeInt(AThread[THREAD]))^).Free;
   end;
 
 begin
+  //raise on start events
   if Assigned(FOnStart) then
     FOnStart(GetThread);
   if Assigned(FOnStartCall) then
@@ -794,18 +813,18 @@ begin
   LIntThread:=DoGetThreadClass.Create(True);
   LIntThread.FreeOnTerminate:=False;//we handle memory
   LIntThread.EZThread:=GetThread;
-  LIntThread.Start:=FStart;
+  LIntThread.StartMethod:=FStart;
   LIntThread.StartCallback:=FStartCall;
   LIntThread.StartNestedCallback:=FStartNestCall;
   LIntThread.Success:=FSuccess;
   LIntThread.SuccessCallback:=FSuccessCall;
   LIntThread.SuccessNestedCallback:=FSuccessNestCall;
-  LIntThread.Error:=FError;
+  LIntThread.ErrorMethod:=FError;
   LIntThread.ErrorCallback:=FErrorCall;
   LIntThread.ErrorNestedCallback:=FErrorNestCall;
 
   //start the internal thread
-  LIntThread.Execute;
+  LIntThread.Start;
 
   //check to make sure we are not in the recursive start call for monitor
   if @FStartNestCall=@CheckRunTime then
@@ -817,10 +836,11 @@ begin
   LThread
     .AddArg(MAX_RUNTIME,FMaxRunTime)
     .AddArg(THREAD,{%H-}NativeInt(@LIntThread))
+    .AddArg(EZ_THREAD,{%H-}NativeInt(@Self))
     .Events
       .UpdateOnStopNestedCallback(FreeThread)
       .Thread
-    .Setup(CheckRunTime)
+    .Setup(CheckRunTime,RaiseStop,RaiseStop)
     .Start;
 end;
 
@@ -837,6 +857,12 @@ begin
   FOnStartCall:=nil;
   FOnStopCall:=nil;
   SetLength(FArgs,0);
+end;
+
+destructor TEZThreadImpl.Destroy;
+begin
+  SetLength(FArgs,0);
+  inherited Destroy;
 end;
 
 { TEZArg }
