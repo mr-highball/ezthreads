@@ -12,7 +12,6 @@ To request features or report a bug, open a github issue with details/steps to r
     * also, by going to `Toolbar -> Project\Project Options\Paths` you can copy the `other units` text to include in your own project
 1. add `.\src` path to your project `other units`
 
-```
 
 **Tip Jar**
   * :dollar: BTC - bc1q55qh7xptfgkp087sfr5ppfkqe2jpaa59s8u2lz
