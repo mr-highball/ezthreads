@@ -276,6 +276,7 @@ type
     function GetSettings: IEZThreadSettings;
     function GetEvents: IEZThreadEvents;
     function IndexOfArg(Const AName:String):Integer;
+    procedure RaiseStop(Const AThread:IEZThread);
   strict protected
     type
 
@@ -393,6 +394,8 @@ type
 implementation
 uses
   syncobjs;
+const
+  MON_THREAD='{48545744-5EBF-4C21-B220-CD0CBAB7F3C1}';
 var
   Critical : TCriticalSection;
 
@@ -545,6 +548,31 @@ begin
   finally
     Critical.Leave;
   end;
+end;
+
+procedure TEZThreadImpl.RaiseStop(const AThread: IEZThread);
+var
+  LThread:IEZThread;
+  LIntThread:TInternalThread;
+begin
+  //capture reference to self
+  LThread:=GetThread;
+
+  //get the internal monitor thread
+  LIntThread:=TInternalThread({%H-}Pointer(NativeInt(AThread[MON_THREAD]))^);
+
+  //raise events with captured reference
+  if Assigned(FOnStop) then
+    FOnStop(LThread);
+  if Assigned(FOnStopCall) then
+    FOnStopCall(LThread);
+  if Assigned(FOnStopNestCall) then
+    FOnStopNestCall(LThread);
+
+  //lastly free the monitor thread
+  if not LIntThread.Finished then
+    LIntThread.Terminate;
+  LIntThread.Free;
 end;
 
 function TEZThreadImpl.DoGetThreadClass: TInternalThreadClass;
@@ -723,10 +751,9 @@ end;
 procedure TEZThreadImpl.Start;
 const
   MAX_RUNTIME='{9957C25D-BB0B-4C64-BD40-A97B8687EFF8}';
-  THREAD='{48545744-5EBF-4C21-B220-CD0CBAB7F3C1}';
-  EZ_THREAD='{682A4183-E70E-417F-8786-1E1EDC930F95}';
 var
   LIntThread:TInternalThread;
+  LThreadImpl:TEZThreadImpl;
   LThread:IEZThread;
 
   (*
@@ -741,13 +768,12 @@ var
   begin
     LElapsed:=0;
     LMax:=AThread[MAX_RUNTIME];
-    LLIntThread:=TInternalThread({%H-}Pointer(NativeInt(AThread[THREAD]))^);
-
+    LLIntThread:=TInternalThread({%H-}Pointer(NativeInt(AThread[MON_THREAD]))^);
     //if we're finished, nothing to do
     if LLIntThread.Finished then
       Exit;
 
-    //we only care if the maximum has been specified, otherwise this thread
+    //we only care if the maximum has been specified, otherwise this MON_THREAD
     //can run until the end of time
     if LMax > 0 then
     begin
@@ -760,44 +786,11 @@ var
           Exit;
       end;
 
-      //if we get here, then the thread has passed the alotted max, so forcefull
+      //if we get here, then the MON_THREAD has passed the alotted max, so forcefull
       //terminate it
       if not LLIntThread.Finished then
-        LIntThread.Terminate;
+        LLIntThread.Terminate;
     end;
-  end;
-
-  (*
-    responsible for raising any stop event
-  *)
-  procedure RaiseStop(Const AThread:IEZThread);
-  var
-    LLThread:TEZThreadImpl;
-    LThreadIntf:IEZThread;
-  begin
-    //capture reference to self
-    LLThread:=TEZThreadImpl({%H-}Pointer(NativeInt(AThread[EZ_THREAD]))^);
-    if not Assigned(LLThread) then
-      Exit;
-    LThreadIntf:=IEZThread(LLThread);
-    LThreadIntf._AddRef;
-    //raise events with captured reference
-    if Assigned(FOnStop) then
-      FOnStop(LLThread);
-    if Assigned(FOnStopCall) then
-      FOnStopCall(LLThread);
-    if Assigned(FOnStopNestCall) then
-      FOnStopNestCall(LLThread);
-    LThreadIntf._Release;
-  end;
-
-  (*
-    frees the local internal thread
-  *)
-  procedure FreeThread(Const AThread:IEZThread);
-  begin
-    //free thread after events to avoid last reference
-    TInternalThread({%H-}Pointer(NativeInt(AThread[THREAD]))^).Free;
   end;
 
 begin
@@ -809,7 +802,7 @@ begin
   if Assigned(FOnStartNestCall) then
     FOnStartNestCall(GetThread);
 
-  //create an internal thread for handle "self" methods
+  //create an internal MON_THREAD for handle "self" methods
   LIntThread:=DoGetThreadClass.Create(True);
   LIntThread.FreeOnTerminate:=False;//we handle memory
   LIntThread.EZThread:=GetThread;
@@ -823,7 +816,7 @@ begin
   LIntThread.ErrorCallback:=FErrorCall;
   LIntThread.ErrorNestedCallback:=FErrorNestCall;
 
-  //start the internal thread
+  //start the internal MON_THREAD
   LIntThread.Start;
 
   //check to make sure we are not in the recursive start call for monitor
@@ -831,16 +824,17 @@ begin
     Exit;
 
   //create an ezthread for monitoring length of runtime and
-  //to handle the freeing of the thread when complete
-  LThread:=TEZThreadImpl.Create;
+  //to handle the freeing of the MON_THREAD when complete
+  LThreadImpl:=TEZThreadImpl.Create;
+  LThreadImpl.FSuccess:=RaiseStop;
+  LThreadImpl.FError:=RaiseStop;
+  LThread:=LThreadImpl as IEZThread;
   LThread
     .AddArg(MAX_RUNTIME,FMaxRunTime)
-    .AddArg(THREAD,{%H-}NativeInt(@LIntThread))
-    .AddArg(EZ_THREAD,{%H-}NativeInt(@Self))
+    .AddArg(MON_THREAD,{%H-}NativeInt(@LIntThread))
     .Events
-      .UpdateOnStopNestedCallback(FreeThread)
       .Thread
-    .Setup(CheckRunTime,RaiseStop,RaiseStop)
+    .Setup(CheckRunTime)
     .Start;
 end;
 
