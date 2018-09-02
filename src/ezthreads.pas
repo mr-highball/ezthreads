@@ -276,7 +276,7 @@ type
     function GetSettings: IEZThreadSettings;
     function GetEvents: IEZThreadEvents;
     function IndexOfArg(Const AName:String):Integer;
-    procedure RaiseStop(Const AThread:IEZThread);
+    procedure RaiseStop(Const {%H-}AThread:IEZThread);
   strict protected
     type
 
@@ -394,8 +394,6 @@ type
 implementation
 uses
   syncobjs;
-const
-  MON_THREAD='{48545744-5EBF-4C21-B220-CD0CBAB7F3C1}';
 var
   Critical : TCriticalSection;
 
@@ -553,13 +551,9 @@ end;
 procedure TEZThreadImpl.RaiseStop(const AThread: IEZThread);
 var
   LThread:IEZThread;
-  LIntThread:TInternalThread;
 begin
   //capture reference to self
   LThread:=GetThread;
-
-  //get the internal monitor thread
-  LIntThread:=TInternalThread({%H-}Pointer(NativeInt(AThread[MON_THREAD]))^);
 
   //raise events with captured reference
   if Assigned(FOnStop) then
@@ -568,11 +562,6 @@ begin
     FOnStopCall(LThread);
   if Assigned(FOnStopNestCall) then
     FOnStopNestCall(LThread);
-
-  //lastly free the monitor thread
-  if not LIntThread.Finished then
-    LIntThread.Terminate;
-  LIntThread.Free;
 end;
 
 function TEZThreadImpl.DoGetThreadClass: TInternalThreadClass;
@@ -751,6 +740,7 @@ end;
 procedure TEZThreadImpl.Start;
 const
   MAX_RUNTIME='{9957C25D-BB0B-4C64-BD40-A97B8687EFF8}';
+  MON_THREAD='{48545744-5EBF-4C21-B220-CD0CBAB7F3C1}';
 var
   LIntThread:TInternalThread;
   LThreadImpl:TEZThreadImpl;
@@ -769,11 +759,12 @@ var
     LElapsed:=0;
     LMax:=AThread[MAX_RUNTIME];
     LLIntThread:=TInternalThread({%H-}Pointer(NativeInt(AThread[MON_THREAD]))^);
+
     //if we're finished, nothing to do
     if LLIntThread.Finished then
       Exit;
 
-    //we only care if the maximum has been specified, otherwise this MON_THREAD
+    //we only care if the maximum has been specified, otherwise this thread
     //can run until the end of time
     if LMax > 0 then
     begin
@@ -786,11 +777,11 @@ var
           Exit;
       end;
 
-      //if we get here, then the MON_THREAD has passed the alotted max, so forcefull
+      //if we get here, then the thread has passed the alotted max, so forcefull
       //terminate it
       if not LLIntThread.Finished then
         LLIntThread.Terminate;
-    end;
+    end
   end;
 
 begin
@@ -802,7 +793,7 @@ begin
   if Assigned(FOnStartNestCall) then
     FOnStartNestCall(GetThread);
 
-  //create an internal MON_THREAD for handle "self" methods
+  //create and initialize an internal thread
   LIntThread:=DoGetThreadClass.Create(True);
   LIntThread.FreeOnTerminate:=False;//we handle memory
   LIntThread.EZThread:=GetThread;
@@ -816,12 +807,16 @@ begin
   LIntThread.ErrorCallback:=FErrorCall;
   LIntThread.ErrorNestedCallback:=FErrorNestCall;
 
-  //start the internal MON_THREAD
+  //start the internal thread
   LIntThread.Start;
 
   //check to make sure we are not in the recursive start call for monitor
   if @FStartNestCall=@CheckRunTime then
+  begin
+    //the monitor thread needs to be freed, so do this once it's terminated
+    LIntThread.FreeOnTerminate:=True;
     Exit;
+  end;
 
   //create an ezthread for monitoring length of runtime and
   //to handle the freeing of the MON_THREAD when complete
@@ -841,6 +836,7 @@ end;
 procedure TEZThreadImpl.Stop;
 begin
   //todo - see if we're started, abort if so, trigger event
+  raise Exception.Create('not implemented');
 end;
 
 constructor TEZThreadImpl.Create;

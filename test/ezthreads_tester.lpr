@@ -145,9 +145,83 @@ begin
   WriteLn('TestHelloWorld::success, waiting no longer');
 end;
 
+(*
+  an example showing how to use dynamic input and perform some
+  arbitrary calculation with it in an ezthread
+*)
+procedure TestDynInput;
+var
+  LThread:IEZThread;
+
+  (*
+    adds two numbers and returns
+  *)
+  function Add(A,B:Integer):Integer;
+  begin
+    Result:=A + B;
+  end;
+
+  (*
+    setup method (runs in separate thread)
+  *)
+  procedure Setup(Const AThread:IEZThread);
+  begin
+    AThread.AddArg('result',Add(AThread['A'],AThread['B']));
+  end;
+
+  (*
+    method to run once thread work has finished (runs in main caller's thread)
+  *)
+  procedure Print(Const AThread:IEZThread);
+  begin
+    WriteLn('TestDynInput::Result=' + IntToStr(AThread['result']));
+  end;
+
+begin
+  LThread:=TEZThreadImpl.Create;
+  LThread
+    .AddArg('A',1)
+    .AddArg('B',2)
+    .Events
+      .UpdateOnStopNestedCallback(Print)
+      .Thread
+    .Setup(Setup)
+    .Start;
+end;
+
+procedure TestForceKill;
+var
+  LThread:IEZThread;
+
+  procedure Setup(Const AThread:IEZThread);
+  begin
+    Sleep(AThread['sleep']);
+  end;
+
+  procedure Error(Const AThread:IEZThread);
+  begin
+    WriteLn('TestForceKill::event should not have fired...');
+  end;
+
+begin
+  LThread:=TEZThreadImpl.Create;
+  LThread
+    .AddArg('sleep',50000)
+    .Settings
+      .UpdateMaxRuntime(50)
+      .Thread
+    .Events
+      .UpdateOnStopNestedCallback(Error)
+      .Thread
+    .Setup(Setup)
+    .Start;
+end;
+
 begin
   TestAddArg;
   TestHelloWorld;
+  TestDynInput;
+  //TestForceKill;
 
   //display results to user
   ReadLn;
