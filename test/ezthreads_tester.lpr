@@ -121,10 +121,9 @@ begin
       .UpdateMaxRuntime(MAX_RUN)
       .Thread
     .Events
-      .UpdateOnStopNestedCallback(UpdateWaiting)
       .Thread
     .AddArg(NAME,'hello world from an ezthread!')
-    .Setup(Start)
+    .Setup(Start,UpdateWaiting,UpdateWaiting)
     .Start;
 
   //simple loop to see when our thread finishes. this would normally not be
@@ -174,6 +173,7 @@ var
   *)
   procedure Print(Const AThread:IEZThread);
   begin
+    WriteLn(MainThreadID,' ',GetThreadID);
     WriteLn('TestDynInput::Result=' + IntToStr(AThread['result']));
   end;
 

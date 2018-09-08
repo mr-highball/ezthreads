@@ -29,7 +29,7 @@ unit ezthreads;
 interface
 
 uses
-  Classes, SysUtils, variants;
+  Classes, SysUtils, variants, fgl;
 
 type
 
@@ -245,38 +245,6 @@ type
     IEZThreadSettings,
     IEZThread
   )
-  strict private
-    FMaxRunTime: Cardinal;
-    FStart,
-    FError,
-    FSuccess,
-    FOnStart,
-    FOnStop: TThreadMethod;
-    FStartCall,
-    FErrorCall,
-    FSuccessCall,
-    FOnStartCall,
-    FOnStopCall: TThreadCallback;
-    FStartNestCall,
-    FErrorNestCall,
-    FSuccessNestCall,
-    FOnStartNestCall,
-    FOnStopNestCall: TThreadNestedCallback;
-    FArgs: TEZArgs;
-    function GetByName(const AName: String): Variant;
-    function GetExists(const AName: String): Boolean;
-    function GetMaxRunTime: Cardinal;
-    function GetOnStart: TThreadMethod;
-    function GetOnStartCall: TThreadCallback;
-    function GetOnStartNestCall: TThreadNestedCallback;
-    function GetOnStop: TThreadMethod;
-    function GetOnStopCall: TThreadCallback;
-    function GetOnStopNestCall: TThreadNestedCallback;
-    function GetThread: IEZThread;
-    function GetSettings: IEZThreadSettings;
-    function GetEvents: IEZThreadEvents;
-    function IndexOfArg(Const AName:String):Integer;
-    procedure RaiseStop(Const {%H-}AThread:IEZThread);
   strict protected
     type
 
@@ -300,6 +268,7 @@ type
         procedure SetThread(Const AValue: IEZThread);
       protected
         procedure Execute; override;
+        procedure RaiseStops;
       public
         (*
           reference to parent ezthread
@@ -327,6 +296,63 @@ type
         meta class for internal thread
       *)
       TInternalThreadClass = class of TInternalThread;
+  strict private
+    type
+      TMonitorThread = class;
+      TMonitorList = TFPGMapObject<String,TMonitorThread>;
+
+      { TMonitorThread }
+      (*
+        monitors the internal worker thread when caller specifies
+        a timeout or stop has been called
+      *)
+      TMonitorThread = class(TThread)
+      strict private
+        FID: String;
+        FList: TMonitorList;
+        FThread: TInternalThread;
+        FStopRequest: Boolean;
+      protected
+        procedure Execute; override;
+      public
+        property InternalThread : TInternalThread read FThread write FThread;
+        property ID : String read FID write FID;
+        property List : TMonitorList read FList write FList;
+        procedure StopMonitor;
+        destructor Destroy; override;
+      end;
+  strict private
+    FMaxRunTime: Cardinal;
+    FStart,
+    FError,
+    FSuccess,
+    FOnStart,
+    FOnStop: TThreadMethod;
+    FStartCall,
+    FErrorCall,
+    FSuccessCall,
+    FOnStartCall,
+    FOnStopCall: TThreadCallback;
+    FStartNestCall,
+    FErrorNestCall,
+    FSuccessNestCall,
+    FOnStartNestCall,
+    FOnStopNestCall: TThreadNestedCallback;
+    FArgs: TEZArgs;
+    FMonitorThreads: TMonitorList;
+    function GetByName(const AName: String): Variant;
+    function GetExists(const AName: String): Boolean;
+    function GetMaxRunTime: Cardinal;
+    function GetOnStart: TThreadMethod;
+    function GetOnStartCall: TThreadCallback;
+    function GetOnStartNestCall: TThreadNestedCallback;
+    function GetOnStop: TThreadMethod;
+    function GetOnStopCall: TThreadCallback;
+    function GetOnStopNestCall: TThreadNestedCallback;
+    function GetThread: IEZThread;
+    function GetSettings: IEZThreadSettings;
+    function GetEvents: IEZThreadEvents;
+    function IndexOfArg(Const AName:String):Integer;
   strict protected
     (*
       method can be overridden to instantiate a child internal thread
@@ -397,6 +423,92 @@ uses
 var
   Critical : TCriticalSection;
 
+{ TEZThreadImpl.TMonitorThread }
+
+procedure TEZThreadImpl.TMonitorThread.Execute;
+var
+  LElapsed,
+  LSleep,
+  LMax:Cardinal;
+
+  (*
+    safely removes a monitor thread by id from a monitor list
+  *)
+  class procedure RemoveID(Const AID:String;Const AList:TMonitorList);
+  begin
+    Critical.Enter;
+    try
+      //remove ourselves from the list
+      if AList.IndexOf(AID) < 0 then
+        Exit;
+      AList.Remove(AID);
+    finally
+      Critical.Leave;
+    end;
+  end;
+begin
+  try
+    FStopRequest:=False;
+    LElapsed:=0;
+    LMax:=FThread.EZThread.Settings.MaxRuntime;
+
+    //if we're finished, nothing to do
+    if FThread.Finished then
+    begin
+      RemoveID(FID,FList);
+      Exit;
+    end;
+
+    //we only care if the maximum has been specified, otherwise this thread
+    //can run until the end of time
+    if LMax > 0 then
+    begin
+      try
+        LSleep:=LMax div 10;
+        while LElapsed < LMax do
+        begin
+          Sleep(LSleep);
+          Inc(LElapsed,LSleep);
+          if FThread.Finished then
+            Exit;
+        end;
+
+        //if we get here, then the thread has passed the alotted max, so forcefull
+        //terminate it
+        if not FThread.Finished then
+          FThread.Terminate;
+      finally
+        RemoveID(FID,FList);
+      end;
+    end
+    //otherwise just wait until a stop request is made
+    else
+      while not FStopRequest
+        and (Assigned(FThread) and (not FThread.Finished))do
+      begin
+        if not Assigned(FThread) then
+          Exit;
+        if FThread.Finished then
+          Exit;
+        Sleep(50);
+      end;
+  finally
+    RemoveID(FID,FList);
+  end;
+end;
+
+procedure TEZThreadImpl.TMonitorThread.StopMonitor;
+begin
+  FStopRequest:=True;
+end;
+
+destructor TEZThreadImpl.TMonitorThread.Destroy;
+begin
+  if Assigned(FThread) then
+    FThread.Free;
+  inherited Destroy;
+end;
+
 { TEZThreadImpl.TInternalThread }
 
 function TEZThreadImpl.TInternalThread.GetThread: IEZThread;
@@ -430,6 +542,8 @@ begin
         FSuccessCall(FThread);
       if Assigned(FSuccessNestCall) then
         FSuccessNestCall(FThread);
+
+      RaiseStops;
     except on E:Exception do
     begin
       //todo - expand the ErrorMethod methods to accept either a TException or
@@ -451,9 +565,26 @@ begin
           FErrorNestCall(FThread);
         finally
         end;
+      try
+        RaiseStops;
+      finally
+      end;
     end
     end;
   end;
+end;
+
+procedure TEZThreadImpl.TInternalThread.RaiseStops;
+begin
+  //todo - is there a way we can get these to run in the main thread?
+  //we would need to capture reference to ezthread so it doesn't get free
+  //then queue the message
+  if Assigned(FThread.Events.OnStop) then
+    FThread.Events.OnStop(FThread);
+  if Assigned(FThread.Events.OnStopCallback) then
+    FThread.Events.OnStopCallback(FThread);
+  if Assigned(FThread.Events.OnStopNestedCallback) then
+    FThread.Events.OnStopNestedCallback(FThread);
 end;
 
 destructor TEZThreadImpl.TInternalThread.Destroy;
@@ -546,22 +677,6 @@ begin
   finally
     Critical.Leave;
   end;
-end;
-
-procedure TEZThreadImpl.RaiseStop(const AThread: IEZThread);
-var
-  LThread:IEZThread;
-begin
-  //capture reference to self
-  LThread:=GetThread;
-
-  //raise events with captured reference
-  if Assigned(FOnStop) then
-    FOnStop(LThread);
-  if Assigned(FOnStopCall) then
-    FOnStopCall(LThread);
-  if Assigned(FOnStopNestCall) then
-    FOnStopNestCall(LThread);
 end;
 
 function TEZThreadImpl.DoGetThreadClass: TInternalThreadClass;
@@ -738,52 +853,9 @@ begin
 end;
 
 procedure TEZThreadImpl.Start;
-const
-  MAX_RUNTIME='{9957C25D-BB0B-4C64-BD40-A97B8687EFF8}';
-  MON_THREAD='{48545744-5EBF-4C21-B220-CD0CBAB7F3C1}';
 var
   LIntThread:TInternalThread;
-  LThreadImpl:TEZThreadImpl;
-  LThread:IEZThread;
-
-  (*
-    handles checking for maximum runtime of the internal thread
-  *)
-  procedure CheckRunTime(Const AThread:IEZThread);
-  var
-    LElapsed,
-    LSleep,
-    LMax:Cardinal;
-    LLIntThread:TInternalThread;
-  begin
-    LElapsed:=0;
-    LMax:=AThread[MAX_RUNTIME];
-    LLIntThread:=TInternalThread({%H-}Pointer(NativeInt(AThread[MON_THREAD]))^);
-
-    //if we're finished, nothing to do
-    if LLIntThread.Finished then
-      Exit;
-
-    //we only care if the maximum has been specified, otherwise this thread
-    //can run until the end of time
-    if LMax > 0 then
-    begin
-      LSleep:=LMax div 10;
-      while LElapsed < LMax do
-      begin
-        Sleep(LSleep);
-        Inc(LElapsed,LSleep);
-        if LLIntThread.Finished then
-          Exit;
-      end;
-
-      //if we get here, then the thread has passed the alotted max, so forcefull
-      //terminate it
-      if not LLIntThread.Finished then
-        LLIntThread.Terminate;
-    end
-  end;
-
+  LMonThread:TMonitorThread;
 begin
   //raise on start events
   if Assigned(FOnStart) then
@@ -807,36 +879,32 @@ begin
   LIntThread.ErrorCallback:=FErrorCall;
   LIntThread.ErrorNestedCallback:=FErrorNestCall;
 
+  //create and setup monitor thread
+  LMonThread:=TMonitorThread.Create(True);
+  LMonThread.FreeOnTerminate:=True;//memory freed automatically
+  LMonThread.ID:=TGuid.NewGuid.ToString();
+  FMonitorThreads.Add(LMonThread.ID);
+  LMonThread.List:=FMonitorThreads;
+  LMonThread.InternalThread:=LIntThread;
+
   //start the internal thread
   LIntThread.Start;
 
-  //check to make sure we are not in the recursive start call for monitor
-  if @FStartNestCall=@CheckRunTime then
-  begin
-    //the monitor thread needs to be freed, so do this once it's terminated
-    LIntThread.FreeOnTerminate:=True;
-    Exit;
-  end;
-
-  //create an ezthread for monitoring length of runtime and
-  //to handle the freeing of the MON_THREAD when complete
-  LThreadImpl:=TEZThreadImpl.Create;
-  LThreadImpl.FSuccess:=RaiseStop;
-  LThreadImpl.FError:=RaiseStop;
-  LThread:=LThreadImpl as IEZThread;
-  LThread
-    .AddArg(MAX_RUNTIME,FMaxRunTime)
-    .AddArg(MON_THREAD,{%H-}NativeInt(@LIntThread))
-    .Events
-      .Thread
-    .Setup(CheckRunTime)
-    .Start;
+  //start the monitor thread
+  LMonThread.Start;
 end;
 
 procedure TEZThreadImpl.Stop;
+var
+  I:Integer;
 begin
-  //todo - see if we're started, abort if so, trigger event
-  raise Exception.Create('not implemented');
+  for I:=0 to Pred(FMonitorThreads.Count) do
+    FMonitorThreads.Data[I].StopMonitor;
+
+  //monitor threads will remove themselves from the list
+  //so wait until this has been done
+  while FMonitorThreads.Count > 0 do
+    Continue;
 end;
 
 constructor TEZThreadImpl.Create;
@@ -847,10 +915,13 @@ begin
   FOnStartCall:=nil;
   FOnStopCall:=nil;
   SetLength(FArgs,0);
+  FMonitorThreads:=TMonitorList.Create(False);
 end;
 
 destructor TEZThreadImpl.Destroy;
 begin
+  Stop;
+  FMonitorThreads.Free;
   SetLength(FArgs,0);
   inherited Destroy;
 end;
