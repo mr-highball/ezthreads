@@ -211,6 +211,7 @@ begin
     .AddArg('start',Now)
     .Settings
       .UpdateMaxRuntime(50)
+      .UpdateForceTerminate(True)//non-graceful termination, but guarantees no dangling threads after timeout
       .Thread
     .Events
       .UpdateOnStopNestedCallback(CheckElapsed)

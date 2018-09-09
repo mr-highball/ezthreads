@@ -79,12 +79,25 @@ type
     function GetMaxRunTime: Cardinal;
     function GetSynchStopEvents: Boolean;
     function GetThread: IEZThread;
+    function GetForceTerminate: Boolean;
 
     //properties
     (*
       maximum time a method is allowed to run without being aborted
     *)
     property MaxRuntime : Cardinal read GetMaxRunTime;
+
+    (*
+      if maximum time is met, and this setting is true, the
+      thread will be forcefully terminated, otherwise stop
+      events will be triggered and the background thread will continue
+      processing until it can check if it has been terminated
+    *)
+    property ForceTerminate : Boolean read GetForceTerminate;
+
+    (*
+      when true, stop events are wrapped in a synchronize call
+    *)
     property SynchronizeStopEvents : Boolean read GetSynchStopEvents;
 
     (*
@@ -94,6 +107,7 @@ type
 
     //methods
     function UpdateMaxRuntime(Const ARuntime:Cardinal):IEZThreadSettings;
+    function UpdateForceTerminate(Const AForce:Boolean):IEZThreadSettings;
     function UpdateSynchronizeStopEvents(Const ASynch:Boolean):IEZThreadSettings;
   end;
 
@@ -385,6 +399,7 @@ type
         FList: TMonitorList;
         FThread: TInternalThread;
         FStopRequest: Boolean;
+        FKilled: Boolean;
       protected
         procedure Execute; override;
       public
@@ -413,9 +428,11 @@ type
     FOnStopNestCall: TThreadNestedCallback;
     FArgs: TEZArgs;
     FMonitorThreads: TMonitorList;
-    FSynchStopEvents: Boolean;
+    FSynchStopEvents,
+    FForceTerminate: Boolean;
     function GetByName(const AName: String): Variant;
     function GetExists(const AName: String): Boolean;
+    function GetForceTerminate: Boolean;
     function GetMaxRunTime: Cardinal;
     function GetOnStart: TThreadMethod;
     function GetOnStartCall: TThreadCallback;
@@ -446,6 +463,7 @@ type
     //properties
     property MaxRuntime : Cardinal read GetMaxRunTime;
     property SynchronizeStopEvents : Boolean read GetSynchStopEvents;
+    property ForceTerminate : Boolean read GetForceTerminate;
 
     property Thread : IEZThread read GetThread;
     property Settings:IEZThreadSettings read GetSettings;
@@ -461,6 +479,7 @@ type
     function UpdateOnStopCallback(Const AOnStop:TThreadCallback):IEZThreadEvents;
     function UpdateOnStopNestedCallback(Const AOnStop:TThreadNestedCallback):IEZThreadEvents;
     function UpdateMaxRuntime(Const ARuntime:Cardinal):IEZThreadSettings;
+    function UpdateForceTerminate(Const AForce:Boolean):IEZThreadSettings;
     function UpdateSynchronizeStopEvents(Const ASynch:Boolean):IEZThreadSettings;
     function AddArg(Const AName:String;Const AArg:Variant;
       Const AOnFinish:TArgCleanupMethod;
@@ -612,6 +631,7 @@ var
 begin
   try
     FStopRequest:=False;
+    FKilled:=False;
     LElapsed:=0;
     LMax:=FThread.EZThread.Settings.MaxRuntime;
 
@@ -641,9 +661,20 @@ begin
         if not FThread.Finished then
           FThread.Terminate;
 
-        //since we forcefully terminated, caller will still expect
+        //since we terminated, caller will still expect
         //for their events to occur
         FThread.RaiseStopEvents;
+
+        //if settings say we should forcefull terminate, do so but
+        //be warned, this may cause problems...
+        //here we check one last time for finished to make sure to avoid if possible
+        if (not FThread.Finished)
+          and (FThread.EZThread.Settings.ForceTerminate)
+        then
+        begin
+          KillThread(FThread.Handle);
+          FKilled:=True;
+        end;
       finally
         RemoveID(FID,FList);
       end;
@@ -671,7 +702,7 @@ end;
 
 destructor TEZThreadImpl.TMonitorThread.Destroy;
 begin
-  if Assigned(FThread) then
+  if Assigned(FThread) and (not FKilled) then
     FThread.Free;
   inherited Destroy;
 end;
@@ -696,19 +727,43 @@ begin
     try
       //attempt to run all applicable StartMethod methods
       if Assigned(FStart) then
+      begin
         FStart(FThread);
+        if Terminated then
+          Exit;
+      end;
       if Assigned(FStartCall) then
+      begin
         FStartCall(FThread);
+        if Terminated then
+          Exit;
+      end;
       if Assigned(FStartNestCall) then
+      begin
         FStartNestCall(FThread);
+        if Terminated then
+          Exit;
+      end;
 
       //now run success methods
       if Assigned(FSuccess) then
+      begin
         FSuccess(FThread);
+        if Terminated then
+          Exit;
+      end;
       if Assigned(FSuccessCall) then
+      begin
         FSuccessCall(FThread);
+        if Terminated then
+          Exit;
+      end;
       if Assigned(FSuccessNestCall) then
+      begin
         FSuccessNestCall(FThread);
+        if Terminated then
+          Exit;
+      end;
 
       if not Terminated then
         RaiseStopEvents;
@@ -788,6 +843,11 @@ var
 begin
   I:=IndexOfArg(AName);
   Result:=I >= 0;
+end;
+
+function TEZThreadImpl.GetForceTerminate: Boolean;
+begin
+  Result:=FForceTerminate;
 end;
 
 function TEZThreadImpl.GetByName(const AName: String): Variant;
@@ -913,6 +973,12 @@ end;
 function TEZThreadImpl.UpdateMaxRuntime(const ARuntime: Cardinal): IEZThreadSettings;
 begin
   FMaxRunTime:=ARunTime;
+  Result:=GetSettings;
+end;
+
+function TEZThreadImpl.UpdateForceTerminate(const AForce: Boolean): IEZThreadSettings;
+begin
+  FForceTerminate:=AForce;
   Result:=GetSettings;
 end;
 
@@ -1105,6 +1171,7 @@ constructor TEZThreadImpl.Create;
 begin
   FMaxRunTime:=0;
   FSynchStopEvents:=False;
+  FForceTerminate:=False;
   FOnStart:=nil;
   FOnStop:=nil;
   FOnStartCall:=nil;
