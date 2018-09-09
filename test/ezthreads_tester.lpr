@@ -38,7 +38,8 @@ uses
   {$endif}
   Classes,
   SysUtils,
-  ezthreads;
+  ezthreads,
+  dateutils;
 
 (*
   a simple test to add an argument and verify the data is
@@ -121,10 +122,9 @@ begin
       .UpdateMaxRuntime(MAX_RUN)
       .Thread
     .Events
-      .UpdateOnStopNestedCallback(UpdateWaiting)
       .Thread
     .AddArg(NAME,'hello world from an ezthread!')
-    .Setup(Start)
+    .Setup(Start,UpdateWaiting,UpdateWaiting)
     .Start;
 
   //simple loop to see when our thread finishes. this would normally not be
@@ -170,10 +170,11 @@ var
   end;
 
   (*
-    method to run once thread work has finished (runs in main caller's thread)
+    method to run once thread work has finished
   *)
   procedure Print(Const AThread:IEZThread);
   begin
+    WriteLn(MainThreadID,' ',GetThreadID);
     WriteLn('TestDynInput::Result=' + IntToStr(AThread['result']));
   end;
 
@@ -182,10 +183,7 @@ begin
   LThread
     .AddArg('A',1)
     .AddArg('B',2)
-    .Events
-      .UpdateOnStopNestedCallback(Print)
-      .Thread
-    .Setup(Setup)
+    .Setup(Setup,nil,Print)
     .Start;
 end;
 
@@ -198,20 +196,24 @@ var
     Sleep(AThread['sleep']);
   end;
 
-  procedure Error(Const AThread:IEZThread);
+  procedure CheckElapsed(Const AThread:IEZThread);
   begin
-    WriteLn('TestForceKill::event should not have fired...');
+    WriteLn(
+      'TestForceKill::CheckElapsed::elapsed time - ',
+      MilliSecondsBetween(AThread['start'],Now)
+    );
   end;
 
 begin
   LThread:=TEZThreadImpl.Create;
   LThread
     .AddArg('sleep',50000)
+    .AddArg('start',Now)
     .Settings
       .UpdateMaxRuntime(50)
       .Thread
     .Events
-      .UpdateOnStopNestedCallback(Error)
+      .UpdateOnStopNestedCallback(CheckElapsed)
       .Thread
     .Setup(Setup)
     .Start;
@@ -221,9 +223,7 @@ begin
   TestAddArg;
   TestHelloWorld;
   TestDynInput;
-  //TestForceKill;
-
-  //display results to user
+  TestForceKill;
   ReadLn;
 end.
 
