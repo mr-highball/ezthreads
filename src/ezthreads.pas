@@ -35,6 +35,7 @@ type
 
   //forward
   IEZThread = interface;
+  IEZThreadSettings = interface;
 
   (*
     callback method for ezthreads
@@ -68,6 +69,42 @@ type
 
   TVariantArray = array of Variant;
 
+  { IEZAwait }
+  (*
+    settings pertaining to await groups
+  *)
+  IEZAwait = interface
+    ['{37AEEC70-FBB9-44FC-94FC-B27E03977D4C}']
+    //property methods
+    function GetGroupID: String;
+    function GetSettings: IEZThreadSettings;
+    function GetThread: IEZThread;
+    function GetThreadID: String;
+
+    //properties
+    (*
+      current group id for this thread
+    *)
+    property GroupID : String read GetGroupID;
+
+    (*
+      current thread id for this thread
+    *)
+    property ThreadID : String read GetThreadID;
+    property Settings : IEZThreadSettings read GetSettings;
+    property Thread : IEZThread read GetThread;
+
+    //methods
+    (*
+      will group this thread to another thread
+    *)
+    function Group(Const AThread:IEZThread):IEZAwait;
+
+    (*
+      will group this thread to a new group id, provided the id
+    *)
+    function UpdateGroupID(Const AGroupID:String):IEZAwait;
+  end;
 
   { IEZThreadSettings }
   (*
@@ -75,6 +112,7 @@ type
   *)
   IEZThreadSettings = interface
     ['{1EE5C618-DA56-4101-BE75-1FD25F131ED2}']
+    function GetAwait: IEZAwait;
     //property methods
     function GetMaxRunTime: Cardinal;
     function GetSynchStopEvents: Boolean;
@@ -99,6 +137,8 @@ type
       when true, stop events are wrapped in a synchronize call
     *)
     property SynchronizeStopEvents : Boolean read GetSynchStopEvents;
+
+    property Await : IEZAwait read GetAwait;
 
     (*
       parent thread these settings belong to
@@ -260,6 +300,7 @@ type
     TInterfacedObject,
     IEZThreadEvents,
     IEZThreadSettings,
+    IEZAwait,
     IEZThread
   )
   strict protected
@@ -430,9 +471,13 @@ type
     FMonitorThreads: TMonitorList;
     FSynchStopEvents,
     FForceTerminate: Boolean;
+    FThreadID,
+    FGroupID: String;
+    function GetAwait: IEZAwait;
     function GetByName(const AName: String): Variant;
     function GetExists(const AName: String): Boolean;
     function GetForceTerminate: Boolean;
+    function GetGroupID: String;
     function GetMaxRunTime: Cardinal;
     function GetOnStart: TThreadMethod;
     function GetOnStartCall: TThreadCallback;
@@ -444,6 +489,7 @@ type
     function GetThread: IEZThread;
     function GetSettings: IEZThreadSettings;
     function GetEvents: IEZThreadEvents;
+    function GetThreadID: String;
     function IndexOfArg(Const AName:String):Integer;
   strict protected
     (*
@@ -464,9 +510,12 @@ type
     property MaxRuntime : Cardinal read GetMaxRunTime;
     property SynchronizeStopEvents : Boolean read GetSynchStopEvents;
     property ForceTerminate : Boolean read GetForceTerminate;
+    property GroupID : String read GetGroupID;
+    property ThreadID : String read GetThreadID;
 
     property Thread : IEZThread read GetThread;
     property Settings:IEZThreadSettings read GetSettings;
+    property Await : IEZAwait read GetAwait;
     property Events:IEZThreadEvents read GetEvents;
     property Exists[Const AName:String]:Boolean read GetExists;
     property ByName[Const AName:String]:Variant read GetByName;default;
@@ -503,6 +552,8 @@ type
     function Setup(Const AStart:TThreadMethod;
       Const AError:TThreadMethod;Const ASuccess:TThreadMethod):IEZThread;overload;
     function Setup(Const AStart:TThreadMethod):IEZThread;overload;
+    function Group(Const AThread:IEZThread):IEZAwait;
+    function UpdateGroupID(Const AGroupID:String):IEZAwait;
     procedure Start;
     procedure Stop;
     constructor Create;virtual;
@@ -514,11 +565,43 @@ type
   *)
   TEZThreadImplClass = class of TEZThreadImpl;
 
+  (*
+    awaits *all* thread groups running at the time of calling
+  *)
+  procedure Await;overload;
+
+  (*
+    awaits a particular thread
+  *)
+  procedure Await(Const AThread:IEZThread);overload;
+
+  (*
+    awaits a particular thread group
+  *)
+  procedure Await(Const AGroupID:String);overload;
+
+
 implementation
 uses
-  syncobjs;
+  syncobjs, ezthreads.collection;
 var
   Critical : TCriticalSection;
+  Collection : IEZCollection;
+
+procedure Await;
+begin
+  //todo - await all thread groups at time of call
+end;
+
+procedure Await(const AThread: IEZThread);
+begin
+  //todo - await a single thread id from it's group
+end;
+
+procedure Await(const AGroupID: String);
+begin
+  //todo - await a thread group
+end;
 
 { TEZThreadImpl.TInternalThread.TNestCallHelper }
 
@@ -850,12 +933,22 @@ begin
   Result:=FForceTerminate;
 end;
 
+function TEZThreadImpl.GetGroupID: String;
+begin
+  Result:=FGroupID;
+end;
+
 function TEZThreadImpl.GetByName(const AName: String): Variant;
 begin
   if Exists[AName] then
     Result:=FArgs[IndexOfArg(AName)].Data
   else
     Result:=nil;
+end;
+
+function TEZThreadImpl.GetAwait: IEZAwait;
+begin
+  Result:=Self as IEZAwait;
 end;
 
 function TEZThreadImpl.GetOnStart: TThreadMethod;
@@ -906,6 +999,11 @@ end;
 function TEZThreadImpl.GetEvents: IEZThreadEvents;
 begin
   Result:=Self as IEZThreadEvents;
+end;
+
+function TEZThreadImpl.GetThreadID: String;
+begin
+  Result:=FThreadID;
 end;
 
 function TEZThreadImpl.IndexOfArg(const AName: String): Integer;
@@ -1111,6 +1209,16 @@ begin
   Result:=Setup(AStart,nil,nil);
 end;
 
+function TEZThreadImpl.Group(const AThread: IEZThread): IEZAwait;
+begin
+  //todo - group with another thread
+end;
+
+function TEZThreadImpl.UpdateGroupID(const AGroupID: String): IEZAwait;
+begin
+  //todo - set group id manually
+end;
+
 procedure TEZThreadImpl.Start;
 var
   LIntThread:TInternalThread;
@@ -1203,8 +1311,10 @@ end;
 
 initialization
   Critical:=TCriticalSection.Create;
+  Collection:=TEZCollectionImpl.Create;
 finalization
   if Assigned(Critical) then
     Critical.Free;
+  Collection:=nil;
 end.
 
