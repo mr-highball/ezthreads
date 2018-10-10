@@ -37,6 +37,13 @@ type
   IEZThread = interface;
   IEZThreadSettings = interface;
 
+  TEZState = (
+    esStopped,
+    esStarted
+  );
+
+  TEZStates = set of TEZState;
+
   (*
     callback method for ezthreads
   *)
@@ -207,12 +214,14 @@ type
     function GetEvents: IEZThreadEvents;
     function GetExists(const AName: String): Boolean;
     function GetByName(const AName: String): Variant;
+    function GetState: TEZState;
 
     //properties
     property Settings:IEZThreadSettings read GetSettings;
     property Events:IEZThreadEvents read GetEvents;
     property Exists[Const AName:String]:Boolean read GetExists;
     property ByName[Const AName:String]:Variant read GetByName;default;
+    property State:TEZState read GetState;
 
     //methods
     (*
@@ -438,12 +447,15 @@ type
       strict private
         FID: String;
         FList: TMonitorList;
+        FOnDone: TNotifyEvent;
         FThread: TInternalThread;
         FStopRequest: Boolean;
         FKilled: Boolean;
       protected
         procedure Execute; override;
+        procedure DoOnDone(Sender:TObject);
       public
+        property OnDone : TNotifyEvent read FOnDone write FOnDone;
         property InternalThread : TInternalThread read FThread write FThread;
         property ID : String read FID write FID;
         property List : TMonitorList read FList write FList;
@@ -473,6 +485,7 @@ type
     FForceTerminate: Boolean;
     FThreadID,
     FGroupID: String;
+    FState: TEZState;
     function GetAwait: IEZAwait;
     function GetByName(const AName: String): Variant;
     function GetExists(const AName: String): Boolean;
@@ -485,12 +498,14 @@ type
     function GetOnStop: TThreadMethod;
     function GetOnStopCall: TThreadCallback;
     function GetOnStopNestCall: TThreadNestedCallback;
+    function GetState: TEZState;
     function GetSynchStopEvents: Boolean;
     function GetThread: IEZThread;
     function GetSettings: IEZThreadSettings;
     function GetEvents: IEZThreadEvents;
     function GetThreadID: String;
     function IndexOfArg(Const AName:String):Integer;
+    procedure UpdateState(Sender:TObject);
   strict protected
     (*
       method can be overridden to instantiate a child internal thread
@@ -519,6 +534,7 @@ type
     property Events:IEZThreadEvents read GetEvents;
     property Exists[Const AName:String]:Boolean read GetExists;
     property ByName[Const AName:String]:Variant read GetByName;default;
+    property State:TEZState read GetState;
 
     //methods
     function UpdateOnStart(Const AOnStart:TThreadMethod):IEZThreadEvents;
@@ -699,7 +715,7 @@ var
   (*
     safely removes a monitor thread by id from a monitor list
   *)
-  class procedure RemoveID(Const AID:String;Const AList:TMonitorList);
+  procedure RemoveID(Const AID:String;Const AList:TMonitorList);
   begin
     Critical.Enter;
     try
@@ -774,8 +790,15 @@ begin
         Sleep(50);
       end;
   finally
+    DoOnDone(Self);
     RemoveID(FID,FList);
   end;
+end;
+
+procedure TEZThreadImpl.TMonitorThread.DoOnDone(Sender: TObject);
+begin
+  if Assigned(FOnDone) then
+    FOnDone(Sender);
 end;
 
 procedure TEZThreadImpl.TMonitorThread.StopMonitor;
@@ -981,6 +1004,11 @@ begin
   Result:=FOnStopNestCall;
 end;
 
+function TEZThreadImpl.GetState: TEZState;
+begin
+  Result:=FState;
+end;
+
 function TEZThreadImpl.GetSynchStopEvents: Boolean;
 begin
   Result:=FSynchStopEvents;
@@ -1019,6 +1047,19 @@ begin
         Result:=I;
         Exit;
       end;
+  finally
+    Critical.Leave;
+  end;
+end;
+
+procedure TEZThreadImpl.UpdateState(Sender: TObject);
+begin
+  //on done gets called before monitor thread removes itself from list,
+  //so count of 1 actually means we'll be stopped
+  Critical.Enter;
+  try
+    if FMonitorThreads.Count <= 1 then
+      FState:=esStopped;
   finally
     Critical.Leave;
   end;
@@ -1254,12 +1295,21 @@ begin
   FMonitorThreads.Add(LMonThread.ID);
   LMonThread.List:=FMonitorThreads;
   LMonThread.InternalThread:=LIntThread;
+  LMonThread.OnDone:=UpdateState;
 
-  //start the internal thread
-  LIntThread.Start;
+  Critical.Enter;
+  try
+    //start the internal thread
+    LIntThread.Start;
 
-  //start the monitor thread
-  LMonThread.Start;
+    //update state
+    FState:=esStarted;
+
+    //start the monitor thread
+    LMonThread.Start;
+  finally
+    Critical.Leave;
+  end;
 end;
 
 procedure TEZThreadImpl.Stop;
@@ -1273,10 +1323,12 @@ begin
   //so wait until this has been done
   while FMonitorThreads.Count > 0 do
     Continue;
+  FState:=esStopped;
 end;
 
 constructor TEZThreadImpl.Create;
 begin
+  FState:=esStopped;
   FMaxRunTime:=0;
   FSynchStopEvents:=False;
   FForceTerminate:=False;
