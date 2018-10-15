@@ -206,13 +206,31 @@ end;
 
 procedure TEZCollectionImpl.Remove(const AThread: IEZThread);
 var
-  I:Integer;
+  I,J,K:Integer;
+  LGroup:TThreadGroup;
 begin
   if IndexOf(AThread.Settings.Await.GroupID,I) then
   begin
     Critical.Enter;
     try
-      FGroups.Delete(I);
+      LGroup:=FGroups.Items[I];
+
+      K:=-1;
+      //find the index of the thread in the group
+      for J:=0 to Pred(LGroup.Count) do
+        if LGroup.Items[J].Settings.Await.ThreadID = AThread.Settings.Await.ThreadID then
+        begin
+          K:=J;
+          break;
+        end;
+
+      //delete the thread from the group
+      if K > 0 then
+        LGroup.Delete(K);
+
+      //if there are no more threads in this group, delete the group
+      if LGroup.Count < 1 then
+        FGroups.Delete(I);
     finally
       Critical.Leave;
     end;

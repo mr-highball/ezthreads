@@ -444,18 +444,21 @@ type
         a timeout or stop has been called
       *)
       TMonitorThread = class(TThread)
+      public
+        type
+          TOnDone = procedure(AThread:IEZThread) of object;
       strict private
         FID: String;
         FList: TMonitorList;
-        FOnDone: TNotifyEvent;
+        FOnDone: TOnDone;
         FThread: TInternalThread;
         FStopRequest: Boolean;
         FKilled: Boolean;
       protected
         procedure Execute; override;
-        procedure DoOnDone(Sender:TObject);
+        procedure DoOnDone(AThread:IEZThread);
       public
-        property OnDone : TNotifyEvent read FOnDone write FOnDone;
+        property OnDone : TOnDone read FOnDone write FOnDone;
         property InternalThread : TInternalThread read FThread write FThread;
         property ID : String read FID write FID;
         property List : TMonitorList read FList write FList;
@@ -505,7 +508,7 @@ type
     function GetEvents: IEZThreadEvents;
     function GetThreadID: String;
     function IndexOfArg(Const AName:String):Integer;
-    procedure UpdateState(Sender:TObject);
+    procedure UpdateState(AThread:IEZThread);
   strict protected
     (*
       method can be overridden to instantiate a child internal thread
@@ -584,17 +587,17 @@ type
   (*
     awaits *all* thread groups running at the time of calling
   *)
-  procedure Await;overload;
+  procedure Await(Const ASleep:Cardinal=10);overload;
 
   (*
     awaits a particular thread
   *)
-  procedure Await(Const AThread:IEZThread);overload;
+  procedure Await(Const AThread:IEZThread;Const ASleep:Cardinal=10);overload;
 
   (*
     awaits a particular thread group
   *)
-  procedure Await(Const AGroupID:String);overload;
+  procedure Await(Const AGroupID:String;Const ASleep:Cardinal=10);overload;
 
 
 implementation
@@ -604,19 +607,41 @@ var
   Critical : TCriticalSection;
   Collection : IEZCollection;
 
-procedure Await;
+procedure Await(Const ASleep:Cardinal=10);
+var
+  I:Integer;
+  LGroups:TStringArray;
 begin
-  //todo - await all thread groups at time of call
+  if Collection.Count < 1 then
+    Exit;
+
+  //fetch the current thread groups
+  LGroups:=Collection.ThreadGroups;
+
+  //call await for each group id
+  for I:=0 to High(LGroups) do
+    Await(LGroups[I],ASleep);
 end;
 
-procedure Await(const AThread: IEZThread);
+procedure Await(const AThread: IEZThread;Const ASleep:Cardinal=10);
 begin
-  //todo - await a single thread id from it's group
+  if not Collection.Exists(AThread) then
+    Exit;
+
+  //use thread id here to check against non-nil result
+  while Collection.Threads[AThread.Settings.Await.ThreadID] <> nil do
+    Sleep(ASleep);
 end;
 
-procedure Await(const AGroupID: String);
+procedure Await(const AGroupID: String;Const ASleep:Cardinal);
 begin
-  //todo - await a thread group
+  //if no group id exists then no need to await
+  if not Collection.Exists(AGroupID) then
+    Exit;
+
+  //threads add and remove themselves from the collection, so
+  while Collection.Exists(AGroupID) do
+    Sleep(ASleep)
 end;
 
 { TEZThreadImpl.TInternalThread.TNestCallHelper }
@@ -711,6 +736,8 @@ var
   LElapsed,
   LSleep,
   LMax:Cardinal;
+  LForceKill:Boolean;
+  LThread:IEZThread;
 
   (*
     safely removes a monitor thread by id from a monitor list
@@ -733,10 +760,13 @@ begin
     FKilled:=False;
     LElapsed:=0;
     LMax:=FThread.EZThread.Settings.MaxRuntime;
+    LForceKill:=FThread.EZThread.Settings.ForceTerminate;
+    LThread:=FThread.EZThread;
 
     //if we're finished, nothing to do
     if FThread.Finished then
     begin
+      DoOnDone(LThread);
       RemoveID(FID,FList);
       Exit;
     end;
@@ -768,9 +798,10 @@ begin
         //be warned, this may cause problems...
         //here we check one last time for finished to make sure to avoid if possible
         if (not FThread.Finished)
-          and (FThread.EZThread.Settings.ForceTerminate)
+          and (LForceKill)
         then
         begin
+          DoOnDone(LThread);
           KillThread(FThread.Handle);
           FKilled:=True;
         end;
@@ -780,25 +811,30 @@ begin
     end
     //otherwise just wait until a stop request is made
     else
-      while not FStopRequest
-        and (Assigned(FThread) and (not FThread.Finished))do
-      begin
-        if not Assigned(FThread) then
-          Exit;
-        if FThread.Finished then
-          Exit;
-        Sleep(50);
+    begin
+      try
+        while not FStopRequest
+          and (Assigned(FThread) and (not FThread.Finished))do
+        begin
+          if not Assigned(FThread) then
+            Exit;
+          if FThread.Finished then
+            Exit;
+          Sleep(50);
+        end;
+      finally
+        DoOnDone(LThread);
       end;
+    end;
   finally
-    DoOnDone(Self);
     RemoveID(FID,FList);
   end;
 end;
 
-procedure TEZThreadImpl.TMonitorThread.DoOnDone(Sender: TObject);
+procedure TEZThreadImpl.TMonitorThread.DoOnDone(AThread: IEZThread);
 begin
   if Assigned(FOnDone) then
-    FOnDone(Sender);
+    FOnDone(AThread);
 end;
 
 procedure TEZThreadImpl.TMonitorThread.StopMonitor;
@@ -1052,14 +1088,19 @@ begin
   end;
 end;
 
-procedure TEZThreadImpl.UpdateState(Sender: TObject);
+procedure TEZThreadImpl.UpdateState(AThread:IEZThread);
 begin
   //on done gets called before monitor thread removes itself from list,
   //so count of 1 actually means we'll be stopped
   Critical.Enter;
   try
     if FMonitorThreads.Count <= 1 then
+    begin
       FState:=esStopped;
+
+      //now remove ourself from the collection that we are finished
+      Collection.Remove(AThread);
+    end;
   finally
     Critical.Leave;
   end;
@@ -1257,7 +1298,9 @@ end;
 
 function TEZThreadImpl.UpdateGroupID(const AGroupID: String): IEZAwait;
 begin
-  //todo - set group id manually
+  if FState = esStarted then
+    raise Exception.Create('group id cannot be changed while thread is started');
+  FGroupID:=AGroupID;
 end;
 
 procedure TEZThreadImpl.Start;
@@ -1272,6 +1315,9 @@ begin
     FOnStartCall(GetThread);
   if Assigned(FOnStartNestCall) then
     FOnStartNestCall(GetThread);
+
+  //for await support, add ourself to the collection
+  Collection.Add(Thread);
 
   //create and initialize an internal thread
   LIntThread:=DoGetThreadClass.Create(True);
@@ -1323,7 +1369,6 @@ begin
   //so wait until this has been done
   while FMonitorThreads.Count > 0 do
     Continue;
-  FState:=esStopped;
 end;
 
 constructor TEZThreadImpl.Create;
@@ -1337,6 +1382,8 @@ begin
   FOnStartCall:=nil;
   FOnStopCall:=nil;
   SetLength(FArgs,0);
+  FThreadID:=TGuid.NewGuid.ToString;
+  FGroupID:=TGuid.NewGuid.ToString;
   FMonitorThreads:=TMonitorList.Create(False);
 end;
 

@@ -185,6 +185,8 @@ begin
     .AddArg('B',2)
     .Setup(Setup,nil,Print)
     .Start;
+
+  Await;
 end;
 
 procedure TestForceKill;
@@ -218,13 +220,39 @@ begin
       .Thread
     .Setup(Setup)
     .Start;
+
+  Await;
+  WriteLn('TestForceKill::force kill finished');
+end;
+
+procedure TestSingleAwait;
+var
+  LThread:IEZThread;
+  LTest:String;
+
+  procedure Setup(Const AThread:IEZThread);
+  begin
+    Sleep(1000);
+    WriteLn('TestSingleAwait::setup finished');
+  end;
+
+begin
+  LThread:=TEZThreadImpl.Create;
+  LThread
+    .Setup(Setup)
+    .Start;
+
+  //call await with the thread to block until this thread has finished running
+  Await(LThread);
+  WriteLn('TestSingleAwait::done awaiting');
 end;
 
 begin
-  TestAddArg;
-  TestHelloWorld;
-  TestDynInput;
+  //TestAddArg;
+  //TestHelloWorld;
+  //TestDynInput;
   TestForceKill;
+  //TestSingleAwait;
   ReadLn;
 end.
 
