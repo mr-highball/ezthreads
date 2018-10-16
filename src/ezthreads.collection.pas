@@ -88,7 +88,12 @@ var
 
 function TEZCollectionImpl.GetCount: Cardinal;
 begin
-  Result:=FGroups.Count;
+  Critical.Enter;
+  try
+    Result:=FGroups.Count;
+  finally
+    Critical.Leave;
+  end;
 end;
 
 function TEZCollectionImpl.GetGroup(const AIndex: Integer): IEZCollection;
@@ -102,7 +107,7 @@ begin
   Result:=LResult;
 
   //no need to enter if no groups exist
-  if (FGroups.Count < 1) or (AIndex < 0) then
+  if AIndex < 0 then
     Exit;
 
   Critical.Enter;
@@ -126,10 +131,6 @@ var
   I,J:Integer;
 begin
   Result:=nil;
-
-  //no need to enter if no groups exist
-  if FGroups.Count < 1 then
-    Exit;
 
   Critical.Enter;
   try
@@ -162,26 +163,36 @@ end;
 
 procedure TEZCollectionImpl.UnsafeAdd(const AThread: IEZThread;Out Index:Integer);
 var
+  I:Integer;
   LGroup:TThreadGroup;
+  LID:String;
+  LThread:IEZThread;
 begin
-  Index:=FGroups.IndexOf(AThread.Settings.Await.GroupID);
+  LID:=AThread.Settings.Await.GroupID;
+  LThread:=AThread;
+  Index:=FGroups.IndexOf(LID);
 
   //if this thread group already exists, just add to it
   if Index >= 0 then
   begin
+    LGroup:=FGroups.Items[Index];
+
     //only add to the group if we haven't already done so
-    if FGroups.Data[Index].IndexOf(AThread) <= 0 then
-      FGroups.Data[Index].Add(AThread);
-    Exit;
+    for I:=0 to Pred(LGroup.Count) do
+      if LGroup.Items[I].Settings.Await.ThreadID = LThread.Settings.Await.ThreadID then
+        Exit;
+
+    //otherwise the thread id did not exist, go ahead and add it
+    LGroup.Add(LThread);
   end
   else
   begin
     //if the thread group doesn't exist, create it and
     //add the thread to the group
     LGroup:=TThreadGroup.Create;
-    LGroup.Add(AThread);
+    LGroup.Add(LThread);
     Index:=FGroups.Add(
-      AThread.Settings.Await.GroupID,
+      LID,
       LGroup
     );
   end;
@@ -208,24 +219,26 @@ procedure TEZCollectionImpl.Remove(const AThread: IEZThread);
 var
   I,J,K:Integer;
   LGroup:TThreadGroup;
+  LThreadID:String;
 begin
+  LThreadID:=AThread.Settings.Await.ThreadID;
   if IndexOf(AThread.Settings.Await.GroupID,I) then
   begin
     Critical.Enter;
     try
-      LGroup:=FGroups.Items[I];
+      LGroup:=FGroups.Data[I];
 
       K:=-1;
       //find the index of the thread in the group
       for J:=0 to Pred(LGroup.Count) do
-        if LGroup.Items[J].Settings.Await.ThreadID = AThread.Settings.Await.ThreadID then
+        if LGroup.Items[J].Settings.Await.ThreadID = LThreadID then
         begin
           K:=J;
           break;
         end;
 
       //delete the thread from the group
-      if K > 0 then
+      if K >= 0 then
         LGroup.Delete(K);
 
       //if there are no more threads in this group, delete the group
@@ -254,6 +267,8 @@ end;
 function TEZCollectionImpl.IndexOf(const AGroupID: String;
   out Index: Integer): Boolean;
 begin
+  Result:=False;
+
   Critical.Enter;
   try
     Index:=FGroups.IndexOf(AGroupID);

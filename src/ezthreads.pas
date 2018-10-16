@@ -612,9 +612,6 @@ var
   I:Integer;
   LGroups:TStringArray;
 begin
-  if Collection.Count < 1 then
-    Exit;
-
   //fetch the current thread groups
   LGroups:=Collection.ThreadGroups;
 
@@ -625,9 +622,6 @@ end;
 
 procedure Await(const AThread: IEZThread;Const ASleep:Cardinal=10);
 begin
-  if not Collection.Exists(AThread) then
-    Exit;
-
   //use thread id here to check against non-nil result
   while Collection.Threads[AThread.Settings.Await.ThreadID] <> nil do
     Sleep(ASleep);
@@ -635,10 +629,6 @@ end;
 
 procedure Await(const AGroupID: String;Const ASleep:Cardinal);
 begin
-  //if no group id exists then no need to await
-  if not Collection.Exists(AGroupID) then
-    Exit;
-
   //threads add and remove themselves from the collection, so
   while Collection.Exists(AGroupID) do
     Sleep(ASleep)
@@ -820,7 +810,7 @@ begin
             Exit;
           if FThread.Finished then
             Exit;
-          Sleep(50);
+          Sleep(10);
         end;
       finally
         DoOnDone(LThread);
@@ -1098,7 +1088,7 @@ begin
     begin
       FState:=esStopped;
 
-      //now remove ourself from the collection that we are finished
+      //once stopped, remove this thread from the collection
       Collection.Remove(AThread);
     end;
   finally
@@ -1293,20 +1283,25 @@ end;
 
 function TEZThreadImpl.Group(const AThread: IEZThread): IEZAwait;
 begin
-  //todo - group with another thread
+  Result:=nil;
+  UpdateGroupID(AThread.Settings.Await.GroupID);
+  Result:=GetAwait;
 end;
 
 function TEZThreadImpl.UpdateGroupID(const AGroupID: String): IEZAwait;
 begin
+  Result:=nil;
   if FState = esStarted then
     raise Exception.Create('group id cannot be changed while thread is started');
   FGroupID:=AGroupID;
+  Result:=GetAwait;
 end;
 
 procedure TEZThreadImpl.Start;
 var
   LIntThread:TInternalThread;
   LMonThread:TMonitorThread;
+  LThread:IEZThread;
 begin
   //raise on start events
   if Assigned(FOnStart) then
@@ -1316,13 +1311,15 @@ begin
   if Assigned(FOnStartNestCall) then
     FOnStartNestCall(GetThread);
 
+  LThread:=GetThread;
+
   //for await support, add ourself to the collection
-  Collection.Add(Thread);
+  Collection.Add(LThread);
 
   //create and initialize an internal thread
   LIntThread:=DoGetThreadClass.Create(True);
   LIntThread.FreeOnTerminate:=False;//we handle memory
-  LIntThread.EZThread:=GetThread;
+  LIntThread.EZThread:=LThread;
   LIntThread.StartMethod:=FStart;
   LIntThread.StartCallback:=FStartCall;
   LIntThread.StartNestedCallback:=FStartNestCall;
