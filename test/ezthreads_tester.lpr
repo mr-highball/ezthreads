@@ -63,6 +63,8 @@ begin
   end
   else
     WriteLn('TestAddArg::failed, could not find arg name');
+
+  Await;
 end;
 
 (*
@@ -72,75 +74,23 @@ end;
 procedure TestHelloWorld;
 const
   NAME='hi';
-  SLEEP_TIME=10;
-  MAX_RUN=1000;
 var
   Thread : IEZThread;
-  Waiting : Boolean;
-  LElapsed : Cardinal;
-
-  procedure UpdateWaiting(Const AThread:IEZThread);
-  begin
-    //let main thread know we are done processing by updating a local var
-    //also note that this is method is called in the callers thread
-    //so we can
-    Waiting:=False;
-    WriteLn(AThread[NAME]);
-  end;
 
   procedure Start(Const AThread:IEZThread);
   begin
-    //note that we can't use writeln without sync because the start
-    //runs in a separate thread than the caller's
-    if MainThreadID = TThread.CurrentThread.ThreadID then
-    begin
-      WriteLn('TestHelloWorld::ThreadStart::failure, this should have been executed in a different thread id');
-      Exit;
-    end;
-
-    //fetch the argument by name and modify it with info showing we
-    //were in a different thread
-    AThread.AddArg(
-      NAME,
-      AThread[NAME] + Format(
-        ' MainThreadID:%d EZThreadID:%d',
-        [MainThreadID,TThread.CurrentThread.ThreadID]
-      )
-    );
+    WriteLn(AThread[NAME]);
   end;
 
 begin
-  Waiting:=True;
-  LElapsed:=0;
   Thread:=TEZThreadImpl.Create;
 
-  //below we show how we can setup an ezthread with a few arguments
-  //and an on stop callback
   Thread
-    .Settings
-      //will terminate if takes longer than this
-      .UpdateMaxRuntime(MAX_RUN)
-      .Thread
-    .Events
-      .Thread
-    .AddArg(NAME,'hello world from an ezthread!')
-    .Setup(Start,UpdateWaiting,UpdateWaiting)
+    .AddArg(NAME,'TestHelloWorld::hello world from an ezthread!')
+    .Setup(Start)
     .Start;
 
-  //simple loop to see when our thread finishes. this would normally not be
-  //necessary to wait in the context of this method, but to make sure
-  //our tests are run in order this was added. also if the thread was aborted
-  //then the OnError method(s) would be called
-  while Waiting do
-  begin
-    Sleep(SLEEP_TIME);
-    Inc(LElapsed,SLEEP_TIME);
-    if LElapsed >= MAX_RUN then
-    begin
-      WriteLn('TestHelloWorld::failure, took too long');
-      Exit;
-    end;
-  end;
+  Await;
 
   WriteLn('TestHelloWorld::success, waiting no longer');
 end;
@@ -185,6 +135,8 @@ begin
     .AddArg('B',2)
     .Setup(Setup,nil,Print)
     .Start;
+
+  Await;
 end;
 
 procedure TestForceKill;
@@ -218,6 +170,89 @@ begin
       .Thread
     .Setup(Setup)
     .Start;
+
+  Await;
+  WriteLn('TestForceKill::force kill finished');
+end;
+
+(*
+  shows that await can be used for blocking for a single thread
+*)
+procedure TestSingleAwait;
+var
+  LThread:IEZThread;
+
+  procedure Setup(Const AThread:IEZThread);
+  begin
+    Sleep(1000);
+    WriteLn('TestSingleAwait::setup finished');
+  end;
+
+begin
+  LThread:=TEZThreadImpl.Create;
+  LThread
+    .Setup(Setup)
+    .Start;
+
+  //call await with the thread to block until this thread has finished running
+  Await(LThread);
+  WriteLn('TestSingleAwait::done awaiting');
+end;
+
+(*
+  this test sets up a situation where one thread (B) depends
+  on another thread (A) to finish before it can proceed to process.
+  lastly this method blocks until both thread (A) & (B) finish using
+  await
+*)
+procedure TestThreadDependency;
+var
+  LThreadA,
+  LThreadB:IEZThread;
+
+  procedure MethodA(Const AThread:IEZThread);
+  begin
+    //do some important work
+    WriteLn('TestThreadDependency::ThreadA starting');
+    Sleep(1000);
+    WriteLn('TestThreadDependency::ThreadA finished');
+  end;
+
+  procedure MethodB(Const AThread:IEZThread);
+  var
+    LID:String;
+  begin
+    LID:=AThread['id'];
+
+    //write that we got to thread (B)
+    WriteLn('TestThreadDependency::ThreadB starting');
+
+    //before doing our work, wait until thread (A) has completed
+    Await(LID);
+
+    //write to console that we finished
+    WriteLn('TestThreadDependency::ThreadB finished');
+  end;
+
+begin
+  //init both threads
+  LThreadA:=TEZThreadImpl.Create;
+  LThreadB:=TEZThreadImpl.Create;
+
+  //setup thread (A)
+  LThreadA
+    .Setup(MethodA)
+    .Start;
+
+  //below we add the thread group id of (A) so that thread (B) can
+  //"await" until (A) is done to proceed its task
+  LThreadB
+    .AddArg('id',LThreadA.Settings.Await.GroupID)
+    .Setup(MethodB)
+    .Start;
+
+  //wait for all threads
+  Await;
 end;
 
 begin
@@ -225,6 +260,8 @@ begin
   TestHelloWorld;
   TestDynInput;
   TestForceKill;
+  TestSingleAwait;
+  TestThreadDependency;
   ReadLn;
 end.
 
