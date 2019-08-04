@@ -37,6 +37,7 @@ type
   public
     property Result : TFPGList<T> read GetResult;
     constructor Create; override;
+    destructor Destroy; override;
   end;
 
   (*
@@ -204,6 +205,12 @@ constructor TFPGListResultImpl<T>.Create;
 begin
   inherited Create;
   FResult:=TFPGList<T>.Create;
+end;
+
+destructor TFPGListResultImpl<T>.Destroy;
+begin
+  FResult.Free;;
+  inherited Destroy;
 end;
 
 
