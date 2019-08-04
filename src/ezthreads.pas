@@ -465,6 +465,25 @@ type
         procedure StopMonitor;
         destructor Destroy; override;
       end;
+  protected
+    function GetAwait: IEZAwait;
+    function GetByName(const AName: String): Variant;
+    function GetExists(const AName: String): Boolean;
+    function GetForceTerminate: Boolean;
+    function GetGroupID: String;
+    function GetMaxRunTime: Cardinal;
+    function GetOnStart: TThreadMethod;
+    function GetOnStartCall: TThreadCallback;
+    function GetOnStartNestCall: TThreadNestedCallback;
+    function GetOnStop: TThreadMethod;
+    function GetOnStopCall: TThreadCallback;
+    function GetOnStopNestCall: TThreadNestedCallback;
+    function GetState: TEZState;
+    function GetSynchStopEvents: Boolean;
+    function GetThread: IEZThread;
+    function GetSettings: IEZThreadSettings;
+    function GetEvents: IEZThreadEvents;
+    function GetThreadID: String;
   strict private
     FMaxRunTime: Cardinal;
     FStart,
@@ -489,24 +508,6 @@ type
     FThreadID,
     FGroupID: String;
     FState: TEZState;
-    function GetAwait: IEZAwait;
-    function GetByName(const AName: String): Variant;
-    function GetExists(const AName: String): Boolean;
-    function GetForceTerminate: Boolean;
-    function GetGroupID: String;
-    function GetMaxRunTime: Cardinal;
-    function GetOnStart: TThreadMethod;
-    function GetOnStartCall: TThreadCallback;
-    function GetOnStartNestCall: TThreadNestedCallback;
-    function GetOnStop: TThreadMethod;
-    function GetOnStopCall: TThreadCallback;
-    function GetOnStopNestCall: TThreadNestedCallback;
-    function GetState: TEZState;
-    function GetSynchStopEvents: Boolean;
-    function GetThread: IEZThread;
-    function GetSettings: IEZThreadSettings;
-    function GetEvents: IEZThreadEvents;
-    function GetThreadID: String;
     function IndexOfArg(Const AName:String):Integer;
     procedure UpdateState(AThread:IEZThread);
   strict protected
