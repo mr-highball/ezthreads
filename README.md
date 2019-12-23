@@ -7,7 +7,7 @@ To request features or report a bug, open a github issue with details/steps to r
 
 Below is a sample pulled from the console tester application which shows a possible use for ezthreads
 
-```
+```pascal
 (*
   this test sets up a situation where one thread (B) depends
   on another thread (A) to finish before it can proceed to process.
