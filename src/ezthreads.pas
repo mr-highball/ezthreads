@@ -516,6 +516,11 @@ type
       instead of the base internal thread
     *)
     function DoGetThreadClass : TInternalThreadClass;virtual;
+
+    (*
+      method can be overidden to perform additional setup tasks for descendants
+    *)
+    procedure DoSetupInternalThread(const AThread : TInternalThread);virtual;
   public
     //events
     property OnStart : TThreadMethod read GetOnStart;
@@ -600,6 +605,10 @@ type
   *)
   procedure Await(Const AGroupID:String;Const ASleep:Cardinal=10);overload;
 
+(*
+  helper method to return a new thread
+*)
+function NewEZThread : IEZThread;
 
 implementation
 uses
@@ -633,6 +642,11 @@ begin
   //threads add and remove themselves from the collection, so
   while Collection.Exists(AGroupID) do
     Sleep(ASleep)
+end;
+
+function NewEZThread: IEZThread;
+begin
+  Result := TEZThreadImpl.Create;
 end;
 
 { TEZThreadImpl.TInternalThread.TNestCallHelper }
@@ -1103,6 +1117,11 @@ begin
   Result:=TInternalThread;
 end;
 
+procedure TEZThreadImpl.DoSetupInternalThread(const AThread: TInternalThread);
+begin
+  //nothing in base
+end;
+
 function TEZThreadImpl.UpdateOnStart(const AOnStart: TThreadMethod): IEZThreadEvents;
 begin
   FOnStart:=AOnStart;
@@ -1331,6 +1350,7 @@ begin
   LIntThread.ErrorCallback:=FErrorCall;
   LIntThread.ErrorNestedCallback:=FErrorNestCall;
   LIntThread.Caller:=TThread.CurrentThread;
+  DoSetupInternalThread(LIntThread);
 
   //create and setup monitor thread
   LMonThread:=TMonitorThread.Create(True);

@@ -48,7 +48,7 @@ begin
     .Start; //start the pool
 
   //wait until both jobs finish
-  Await(LPool);
+  Await(LPool.WorkerGroupID);
 
   //write status
   WriteLn(Format('TestTwoTasks::[success]:%s', [BoolToStr(LJobOneFinished and LJobTwoFinished, True)]));
@@ -86,5 +86,8 @@ end;
 begin
   TestTwoTasks;
   TestSharedArgs;
+
+  //wait for user input
+  ReadLn;
 end.
 
