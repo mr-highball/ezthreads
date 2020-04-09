@@ -136,12 +136,30 @@ type
         used internally to queue methods of various types
       *)
       TMethodQueue = TQueue<TQueueItem>;
+
+      (*
+        placeholder thread used to queue to the await collection
+        serves no purpose other than to stand in line... sad life.
+      *)
+      IPlaceHolderThread = interface(IEZThread)
+        ['{29750A1E-4F19-45B4-8692-709921EE913D}']
+      end;
+
+      (*
+        implementation of a place holder thread
+      *)
+      TPlaceHolderThreadImpl = class(TEZThreadImpl, IPlaceHolderThread)
+      end;
   strict private
     FWorking : TArray<Boolean>;
     FWorkers : TEZThreads;
     FWorkerGroup : String;
     FWork : TMethodQueue;
     FCritical : TCriticalSection;
+    FPlaceHolders : TEZThreads;
+
+    procedure AddPlaceHolder;
+    procedure RemovePlaceHolder;
   public
     type
 
@@ -198,6 +216,8 @@ type
 function NewEZThreadPool(const AWorkers : Cardinal = 4) : IEZThreadPool;
 
 implementation
+uses
+  ezthreads.collection;
 
 function NewEZThreadPool(const AWorkers: Cardinal): IEZThreadPool;
 begin
@@ -300,6 +320,44 @@ begin
   Result := FWorkerGroup;
 end;
 
+procedure TEZThreadPoolImpl.AddPlaceHolder;
+var
+  LThread : IPlaceHolderThread;
+begin
+  LThread := TPlaceHolderThreadImpl.Create;
+
+  //update the group id to that of the workers
+  LThread.Settings.Await.UpdateGroupID(FWorkerGroup);
+
+  FCritical.Enter;
+  try
+    //add the thread id to the place holder list
+    FPlaceHolders.Add(LThread);
+
+    //add the thread to the await collection
+    AddThreadToAwaitCollection(LThread);
+  finally
+    FCritical.Leave;
+  end;
+end;
+
+procedure TEZThreadPoolImpl.RemovePlaceHolder;
+begin
+  FCritical.Enter;
+  try
+    if FPlaceHolders.Count < 1 then
+      Exit;
+
+    //remove the placeholder from the collection
+    RemoveThreadFromAwaitCollection(FPlaceHolders[0]);
+
+    //delete from thread list
+    FPlaceHolders.Delete(0);
+  finally
+    FCritical.Leave;
+  end;
+end;
+
 function TEZThreadPoolImpl.GetFreeWorker: IEZThread;
 var
   I: Integer;
@@ -310,8 +368,16 @@ begin
     begin
       if not FWorking[I] then
       begin
+        //mark as working and fetch the free worker
         FWorking[I] := True;
         Result := FWorkers[I];
+
+        //add the worker to the group for await support
+        AddThreadToAwaitCollection(Result);
+
+        //now that we've taken the place of a placeholder, remove one
+        RemovePlaceHolder;
+
         Exit;
       end;
     end;
@@ -335,6 +401,9 @@ var
 begin
   Result := Self;
 
+  //adds a placeholder thread
+  AddPlaceHolder;
+
   //queue up a callback work item
   FCritical.Enter;
   try
@@ -355,6 +424,9 @@ var
 begin
   Result := Self;
 
+  //adds a placeholder thread
+  AddPlaceHolder;
+
   //queue up a nested work item
   FCritical.Enter;
   try
@@ -374,6 +446,9 @@ var
   LWork : TQueueItem;
 begin
   Result := Self;
+
+  //adds a placeholder thread
+  AddPlaceHolder;
 
   //queue up a object method work item
   FCritical.Enter;
@@ -460,6 +535,7 @@ end;
 constructor TEZThreadPoolImpl.Create;
 begin
   inherited Create;
+  FPlaceHolders := TEZThreads.Create;
   FWork := TMethodQueue.Create;
   FCritical := TCriticalSection.Create;
   FWorkers := TEZThreads.Create;

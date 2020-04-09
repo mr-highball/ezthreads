@@ -44,11 +44,11 @@ begin
   //work two jobs
   LPool
     .Queue(JobOne, nil, nil)
-    .Queue(JobTwo, nil, nil)
+    //.Queue(JobTwo, nil, nil)
     .Start; //start the pool
 
   //wait until both jobs finish
-  Await(LPool.WorkerGroupID);
+  Await(LPool);
 
   //write status
   WriteLn(Format('TestTwoTasks::[success]:%s', [BoolToStr(LJobOneFinished and LJobTwoFinished, True)]));

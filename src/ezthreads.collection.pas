@@ -168,8 +168,8 @@ var
   LID:String;
   LThread:IEZThread;
 begin
-  LID:=AThread.Settings.Await.GroupID;
   LThread:=AThread;
+  LID:=LThread.Settings.Await.GroupID;
   Index:=FGroups.IndexOf(LID);
 
   //if this thread group already exists, just add to it

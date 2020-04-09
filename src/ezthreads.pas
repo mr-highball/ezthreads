@@ -520,7 +520,9 @@ type
     (*
       method can be overidden to perform additional setup tasks for descendants
     *)
-    procedure DoSetupInternalThread(const AThread : TInternalThread);virtual;
+    procedure DoSetupInternalThread(const AThread : TInternalThread); virtual;
+    class procedure AddThreadToAwaitCollection(const AThread : IEZThread); static;
+    class procedure RemoveThreadFromAwaitCollection(const AThread : IEZThread); static;
   public
     //events
     property OnStart : TThreadMethod read GetOnStart;
@@ -612,7 +614,9 @@ function NewEZThread : IEZThread;
 
 implementation
 uses
-  syncobjs, ezthreads.collection;
+  syncobjs,
+  ezthreads.collection,
+  ezthreads.pool;
 var
   Critical : TCriticalSection;
   Collection : IEZCollection;
@@ -631,10 +635,31 @@ begin
 end;
 
 procedure Await(const AThread: IEZThread;Const ASleep:Cardinal=10);
+var
+  LThread : IEZThread;
+  LPool : IEZThreadPool;
 begin
-  //use thread id here to check against non-nil result
-  while Collection.Threads[AThread.Settings.Await.ThreadID] <> nil do
-    Sleep(ASleep);
+  if not Assigned(AThread) then
+    Exit;
+
+  //ensure we have a reference
+  LThread := AThread;
+
+  //support thread pools being passed in
+  if LThread is IEZThreadPool then
+  begin
+    LPool := LThread as IEZThreadPool;
+
+    //use thread pool worker group here in group await call
+    Await(LPool.WorkerGroupID, ASleep);
+
+    //stop the thread pool since caller request to wait for the end of tasks
+    LPool.Stop;
+  end
+  else
+    //use thread id here to check against non-nil result
+    while Collection.Threads[LThread.Settings.Await.ThreadID] <> nil do
+      Sleep(ASleep);
 end;
 
 procedure Await(const AGroupID: String;Const ASleep:Cardinal);
@@ -1122,6 +1147,21 @@ begin
   //nothing in base
 end;
 
+class procedure TEZThreadImpl.AddThreadToAwaitCollection(
+  const AThread: IEZThread);
+begin
+  if not Assigned(AThread) then
+    Exit;
+
+  Collection.Add(AThread);
+end;
+
+class procedure TEZThreadImpl.RemoveThreadFromAwaitCollection(
+  const AThread: IEZThread);
+begin
+  Collection.Remove(AThread);
+end;
+
 function TEZThreadImpl.UpdateOnStart(const AOnStart: TThreadMethod): IEZThreadEvents;
 begin
   FOnStart:=AOnStart;
@@ -1333,9 +1373,6 @@ begin
 
   LThread:=GetThread;
 
-  //for await support, add ourself to the collection
-  Collection.Add(LThread);
-
   //create and initialize an internal thread
   LIntThread:=DoGetThreadClass.Create(True);
   LIntThread.FreeOnTerminate:=False;//we handle memory
@@ -1360,6 +1397,9 @@ begin
   LMonThread.List:=FMonitorThreads;
   LMonThread.InternalThread:=LIntThread;
   LMonThread.OnDone:=UpdateState;
+
+  //for await support, add ourself to the collection
+  Collection.Add(LThread);
 
   Critical.Enter;
   try
