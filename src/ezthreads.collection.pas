@@ -169,12 +169,16 @@ var
   LThread:IEZThread;
 begin
   LThread:=AThread;
+
+  //get the group id and look inside to see if we found it
   LID:=LThread.Settings.Await.GroupID;
   Index:=FGroups.IndexOf(LID);
 
   //if this thread group already exists, just add to it
   if Index >= 0 then
   begin
+    //now get the thread id to search the group
+    LID := LThread.Settings.Await.ThreadID;
     LGroup:=FGroups.Items[Index];
 
     //only add to the group if we haven't already done so
