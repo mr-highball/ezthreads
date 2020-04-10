@@ -231,88 +231,92 @@ procedure TEZThreadPoolImpl.TPoolWorkerThread.Execute;
 var
   LWork : TEZThreadPoolImpl.TQueueItem;
   LWorker : IEZThread;
+  LStillWorking: Boolean;
+  I: Integer;
 begin
   try
+    //run the start methods
+    if Assigned(StartCallback) then
+      StartCallback(Thread);
+
+    if Assigned(StartNestedCallback) then
+      StartNestedCallback(Thread);
+
+    if Assigned(StartMethod) then
+      StartMethod(Thread);
+
+    //as long as a stop hasn't been requested continue to poll for work
+    while not Terminated do
+    begin
+      //check if we have work
+      if FPool.FWork.Count < 1 then
+      begin
+        Sleep(1);
+        Continue;
+      end;
+
+      //aquire a lock and work
+      FPool.FCritical.Enter;
+      try
+        //work must've been cleared before we got the lock
+        if FPool.FWork.Count < 1 then
+          Continue;
+
+        //dequeue some work
+        LWork := FPool.FWork.Dequeue;
+
+        //validate we have at least one start method before we pull a worker
+        if not (Assigned(LWork.Callback.Start)
+          or Assigned(LWork.Nested.Start)
+          or Assigned(LWork.Method.Start))
+        then
+          Continue;
+
+        //get a worker (this blocks until one frees up)
+        LWorker := FPool.GetFreeWorker;
+
+        //setup and start the work
+        LWorker
+          .Events
+            .UpdateOnStart(FPool.Events.OnStart)
+            .UpdateOnStartNestedCallback(FPool.Events.OnStartNestedCallback)
+            .UpdateOnStartCallback(FPool.Events.OnStartCallback)
+            .Thread
+          .Setup(LWork.Callback.Start, LWork.Callback.Error, LWork.Callback.Success)
+          .Setup(LWork.Nested.Start, LWork.Nested.Error, LWork.Nested.Success)
+          .Setup(LWork.Method.Start, LWork.Method.Error, LWork.Method.Success)
+          .Start
+      finally
+        FPool.FCritical.Leave;
+      end;
+    end;
+
+    //terminate has been requested make sure all workers have a chance
+    //to finish
+    LStillWorking := False;
+
+    while LStillWorking do
+    begin
+      for I := 0 to High(FPool.FWorking) do
+        if FPool.FWorking[I] then
+          LStillWorking := True;
+    end;
+
+
+  except on E : Exception do
     try
-      //run the start methods
-      if Assigned(StartCallback) then
-        StartCallback(Thread);
-
-      if Assigned(StartNestedCallback) then
-        StartNestedCallback(Thread);
-
-      if Assigned(StartMethod) then
-        StartMethod(Thread);
-
-      //check for terminated
       if Terminated then
         Exit;
 
-      //as long as a stop hasn't been requested continue to poll for work
-      while not Terminated do
-      begin
-        //check if we have work
-        if FPool.FWork.Count < 1 then
-        begin
-          Sleep(1);
-          Continue;
-        end;
+      //run the error methods
+      if Assigned(ErrorCallback) then
+        ErrorCallback(Thread);
 
-        //aquire a lock and work
-        FPool.FCritical.Enter;
-        try
-          //work must've been cleared before we got the lock
-          if FPool.FWork.Count < 1 then
-            Continue;
+      if Assigned(ErrorNestedCallback) then
+        ErrorNestedCallback(Thread);
 
-          //dequeue some work
-          LWork := FPool.FWork.Dequeue;
-
-          //validate we have at least one start method before we pull a worker
-          if not (Assigned(LWork.Callback.Start)
-            or Assigned(LWork.Nested.Start)
-            or Assigned(LWork.Method.Start))
-          then
-            Continue;
-
-          //get a worker (this blocks until one frees up)
-          LWorker := FPool.GetFreeWorker;
-
-          //setup and start the work
-          LWorker
-            .Events
-              .UpdateOnStart(FPool.Events.OnStart)
-              .UpdateOnStartNestedCallback(FPool.Events.OnStartNestedCallback)
-              .UpdateOnStartCallback(FPool.Events.OnStartCallback)
-              .Thread
-            .Setup(LWork.Callback.Start, LWork.Callback.Error, LWork.Callback.Success)
-            .Setup(LWork.Nested.Start, LWork.Nested.Error, LWork.Nested.Success)
-            .Setup(LWork.Method.Start, LWork.Method.Error, LWork.Method.Success)
-            .Start
-        finally
-          FPool.FCritical.Leave;
-        end;
-      end;
-    except on E : Exception do
-      try
-        if Terminated then
-          Exit;
-
-        //run the error methods
-        if Assigned(ErrorCallback) then
-          ErrorCallback(Thread);
-
-        if Assigned(ErrorNestedCallback) then
-          ErrorNestedCallback(Thread);
-
-        if Assigned(ErrorMethod) then
-          ErrorMethod(Thread);
-      finally
-      end;
-    end;
-  finally
-    try
-      RaiseStopEvents;
+      if Assigned(ErrorMethod) then
+        ErrorMethod(Thread);
     finally
     end;
   end;
@@ -496,8 +500,16 @@ const
     when a worker stops, write to the working array
   *)
   procedure WorkerStop(const AThread : IEZThread);
+  var
+    I : Integer;
   begin
-    FWorking[AThread[INTERNAL_INDEX]] := False;
+    FCritical.Enter;
+    try
+      I := AThread[INTERNAL_INDEX];
+      FWorking[I] := False;
+    finally
+      FCritical.Leave;
+    end;
   end;
 
 begin
@@ -515,7 +527,8 @@ begin
   LStarted := State = esStarted;
 
   //stop monitoring for queued jobs
-  Stop;
+  if LStarted then
+    Stop;
 
   //set the working array to the worker count and fill as false
   SetLength(FWorking, LCount);

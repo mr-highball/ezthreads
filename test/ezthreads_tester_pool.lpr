@@ -8,6 +8,74 @@ uses
   ezthreads.pool;
 
 (*
+  tests showing that the start and stop events work properly
+  with a thread pool
+*)
+procedure TestStartStop;
+var
+  LPool : IEZThreadPool;
+
+  procedure StartPool(const AThread : IEZThread);
+  begin
+    AThread.AddArg('started', True);
+  end;
+
+  procedure StopPool(const AThread : IEZThread);
+  begin
+    AThread.AddArg('stopped', True);
+  end;
+begin
+  LPool := NewEZThreadPool(1);
+
+  LPool
+    .Events
+      .UpdateOnStartNestedCallback(StartPool)
+      .UpdateOnStopNestedCallback(StopPool)
+      .Thread
+    .Start;
+
+  Await(LPool);
+
+  WriteLn(Format('TestStartStop::[success]:%s', [BoolToStr(LPool.Exists['started'] and LPool.Exists['stopped'], True)]));
+end;
+
+(*
+  test that shows one simple task completing
+  by an ezthread pool
+*)
+procedure TestSingleTask;
+var
+  LPool : IEZThreadPool;
+  LJobOneFinished : Boolean;
+
+  //simple parallel job
+  procedure JobOne(const AThread : IEZThread);
+  begin
+    //do some work
+    Sleep(100);
+    LJobOneFinished := True;
+  end;
+
+begin
+  //flags for checking if both jobs finished
+  LJobOneFinished := False;
+
+  //init a pool with one worker
+  LPool := NewEZThreadPool(1);
+
+  //work a single job
+  LPool
+    .Queue(JobOne, nil, nil)
+    .Start; //start the pool
+
+  //wait until the job finishes
+  Await(LPool);
+
+  //write status
+  WriteLn(Format('TestSingleTask::[success]:%s', [BoolToStr(LJobOneFinished, True)]));
+end;
+
+(*
   test that shows two simple tasks completing in parallel
   by an ezthread pool
 *)
@@ -52,16 +120,16 @@ begin
 
   //init a pool with two workers
   LPool := NewEZThreadPool(1);
-  //LPool
-  //  .Events
-  //    .UpdateOnStartNestedCallback(TempStart)
-  //    .UpdateOnStopNestedCallback(TempPoolDone);
+  LPool
+    .Events
+      .UpdateOnStartNestedCallback(TempStart)//;
+      .UpdateOnStopNestedCallback(TempPoolDone).Thread.Start;
 
   //work two jobs
-  LPool
-    .Queue(JobOne, nil, nil)
-    .Queue(JobTwo, nil, nil)
-    .Start; //start the pool
+  //LPool
+  //  .Queue(JobOne, nil, nil);
+    //.Queue(JobTwo, nil, nil)
+    //.Start; //start the pool
 
   //wait until both jobs finish
   Await(LPool);
@@ -99,9 +167,13 @@ procedure TestSharedArgs;
 begin
 end;
 
+
+
 begin
-  TestTwoTasks;
-  TestSharedArgs;
+  TestStartStop;
+  TestSingleTask;
+  //TestTwoTasks;
+  //TestSharedArgs;
 
   //wait for user input
   ReadLn;

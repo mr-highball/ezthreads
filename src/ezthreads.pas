@@ -650,6 +650,10 @@ begin
   //ensure we have a reference
   LThread := AThread;
 
+  //nothing to do if the thread hasn't been started
+  if LThread.State <> esStarted then
+    Exit;
+
   //support thread pools being passed in
   if LThread is IEZThreadPool then
   begin
@@ -772,7 +776,6 @@ var
   LSleep,
   LMax:Cardinal;
   LForceKill:Boolean;
-  LThread:IEZThread;
 
   (*
     safely removes a monitor thread by id from a monitor list
@@ -781,13 +784,21 @@ var
   begin
     Critical.Enter;
     try
-      //raise done event safely
+      //raise stop event safely as long as it wasn't killed forcefully
+      //(in this case it will have already been called)
       try
-        DoOnDone(LThread);
+        if not FKilled then
+          FThread.RaiseStopEvents;
       finally
       end;
 
-      //remove ourselves from the list
+      //call done after all other events since it's the last in the chain
+      try
+        DoOnDone(FThread.EZThread);
+      finally
+      end;
+
+      //lastly, remove ourselves from the list
       if AList.IndexOf(AID) < 0 then
         Exit;
 
@@ -804,7 +815,6 @@ begin
     LElapsed:=0;
     LMax := FThread.EZThread.Settings.MaxRuntime;
     LForceKill := FThread.EZThread.Settings.ForceTerminate;
-    LThread := FThread.EZThread;
 
     //if we're finished, nothing to do
     if FThread.Finished or FStopRequest then
@@ -841,19 +851,18 @@ begin
         //if we get here, then the thread has passed the alotted max, so forcefull
         //terminate it
         if not FThread.Finished then
-        begin
           FThread.Terminate;
-
-          //since we terminated, caller will still expect
-          //for their events to occur
-          FThread.RaiseStopEvents;
-        end;
 
         //here we check one last time for finished to make sure to avoid a kill if possible
         if (not FThread.Finished)
           and (LForceKill)
         then
         begin
+          //since we are killing, caller will still expect
+          //for their events to occur
+          FThread.RaiseStopEvents;
+
+          //kill it dead
           KillThread(FThread.Handle);
           FKilled:=True;
           Exit;
@@ -875,7 +884,7 @@ begin
       Sleep(1);
     end;
   finally
-    //raises done, and removes from list
+    //raises stop events, and removes from list
     RemoveID(FID,FList);
   end;
 end;
@@ -958,9 +967,6 @@ begin
         if Terminated then
           Exit;
       end;
-
-      if not Terminated then
-        RaiseStopEvents;
     except on E:Exception do
     begin
       //todo - expand the ErrorMethod methods to accept either a TException or
@@ -982,11 +988,6 @@ begin
           FErrorNestCall(FThread);
         finally
         end;
-      try
-        if not Terminated then
-          RaiseStopEvents;
-      finally
-      end;
     end
     end;
   end;
