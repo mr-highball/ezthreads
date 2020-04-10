@@ -166,7 +166,8 @@ var
   I:Integer;
   LGroup:TThreadGroup;
   LID:String;
-  LThread:IEZThread;
+  LThread,
+  LGroupThread : IEZThread;
 begin
   LThread:=AThread;
 
@@ -179,12 +180,22 @@ begin
   begin
     //now get the thread id to search the group
     LID := LThread.Settings.Await.ThreadID;
-    LGroup:=FGroups.Items[Index];
+    LGroup:=FGroups.Data[Index];
 
     //only add to the group if we haven't already done so
     for I:=0 to Pred(LGroup.Count) do
-      if LGroup.Items[I].Settings.Await.ThreadID = LThread.Settings.Await.ThreadID then
+    begin
+      //grab a ref to the group thread
+      LGroupThread := LGroup.Items[I];
+
+      if not Assigned(LGroupThread) then
+        Continue;
+
+      //check if this item matches the input's thread id, if so we can
+      //avoid the add altogether
+      if LGroupThread.Settings.Await.ThreadID = LID then
         Exit;
+    end;
 
     //otherwise the thread id did not exist, go ahead and add it
     LGroup.Add(LThread);

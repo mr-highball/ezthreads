@@ -33,18 +33,34 @@ var
     LJobTwoFinished := True;
   end;
 
+  procedure TempStart(const AThread : IEZThread);
+  begin
+    WriteLn('Pool=', BoolToStr(AThread is IEZThreadPool, True));
+    WriteLn('ThreadID=', AThread.Settings.Await.ThreadID,
+      ' GroupID=', AThread.Settings.Await.GroupID);
+    WriteLn('--');
+  end;
+
+  procedure TempPoolDone(const AThread : IEZThread);
+  begin
+    WriteLn('Pool Finished');
+  end;
 begin
   //flags for checking if both jobs finished
   LJobOneFinished := False;
   LJobTwoFinished := False;
 
   //init a pool with two workers
-  LPool := NewEZThreadPool(2);
+  LPool := NewEZThreadPool(1);
+  //LPool
+  //  .Events
+  //    .UpdateOnStartNestedCallback(TempStart)
+  //    .UpdateOnStopNestedCallback(TempPoolDone);
 
   //work two jobs
   LPool
     .Queue(JobOne, nil, nil)
-    //.Queue(JobTwo, nil, nil)
+    .Queue(JobTwo, nil, nil)
     .Start; //start the pool
 
   //wait until both jobs finish

@@ -447,7 +447,9 @@ type
       public
         type
           TOnDone = procedure(AThread:IEZThread) of object;
+          TCheckStopRequest = function : Boolean of object;
       strict private
+        FCheckStop: TCheckStopRequest;
         FID: String;
         FList: TMonitorList;
         FOnDone: TOnDone;
@@ -457,12 +459,13 @@ type
       protected
         procedure Execute; override;
         procedure DoOnDone(AThread:IEZThread);
+        function DoGetShouldStop : Boolean;
       public
         property OnDone : TOnDone read FOnDone write FOnDone;
+        property CheckStop : TCheckStopRequest read FCheckStop write FCheckStop;
         property InternalThread : TInternalThread read FThread write FThread;
         property ID : String read FID write FID;
         property List : TMonitorList read FList write FList;
-        procedure StopMonitor;
         destructor Destroy; override;
       end;
   protected
@@ -504,12 +507,14 @@ type
     FArgs: TEZArgs;
     FMonitorThreads: TMonitorList;
     FSynchStopEvents,
-    FForceTerminate: Boolean;
+    FForceTerminate,
+    FStopMonitor: Boolean;
     FThreadID,
     FGroupID: String;
     FState: TEZState;
     function IndexOfArg(Const AName:String):Integer;
     procedure UpdateState(AThread:IEZThread);
+    function GetMonitorStop : Boolean;
   strict protected
     (*
       method can be overridden to instantiate a child internal thread
@@ -776,87 +781,101 @@ var
   begin
     Critical.Enter;
     try
+      //raise done event safely
+      try
+        DoOnDone(LThread);
+      finally
+      end;
+
       //remove ourselves from the list
       if AList.IndexOf(AID) < 0 then
         Exit;
+
       AList.Remove(AID);
     finally
       Critical.Leave;
     end;
   end;
+
 begin
   try
-    FStopRequest:=False;
-    FKilled:=False;
+    FStopRequest := DoGetShouldStop;
+    FKilled := False;
     LElapsed:=0;
-    LMax:=FThread.EZThread.Settings.MaxRuntime;
-    LForceKill:=FThread.EZThread.Settings.ForceTerminate;
-    LThread:=FThread.EZThread;
+    LMax := FThread.EZThread.Settings.MaxRuntime;
+    LForceKill := FThread.EZThread.Settings.ForceTerminate;
+    LThread := FThread.EZThread;
 
     //if we're finished, nothing to do
-    if FThread.Finished then
-    begin
-      DoOnDone(LThread);
-      RemoveID(FID,FList);
+    if FThread.Finished or FStopRequest then
       Exit;
-    end;
 
     //we only care if the maximum has been specified, otherwise this thread
     //can run until the end of time
     if LMax > 0 then
     begin
-      try
-        LSleep:=LMax div 10;
-        while LElapsed < LMax do
-        begin
-          Sleep(LSleep);
-          Inc(LElapsed,LSleep);
-          if FThread.Finished then
-            Exit;
-        end;
+      FStopRequest := DoGetShouldStop;
+      LSleep := LMax div 10;
 
+      while LElapsed < LMax do
+      begin
+        Sleep(LSleep);
+        Inc(LElapsed,LSleep);
+
+        if FThread.Finished then
+          Exit;
+
+        //check if a request has been made
+        FStopRequest := DoGetShouldStop;
+
+        //if so and the thread still hasn't finished break the loop
+        //and let force kill / stop logic handle the rest
+        if FStopRequest then
+          Break;
+      end;
+
+      //if settings say we should forcefull terminate, do so but
+      //be warned, this may cause problems...
+      if LForceKill then
+      begin
         //if we get here, then the thread has passed the alotted max, so forcefull
         //terminate it
         if not FThread.Finished then
+        begin
           FThread.Terminate;
 
-        //since we terminated, caller will still expect
-        //for their events to occur
-        FThread.RaiseStopEvents;
+          //since we terminated, caller will still expect
+          //for their events to occur
+          FThread.RaiseStopEvents;
+        end;
 
-        //if settings say we should forcefull terminate, do so but
-        //be warned, this may cause problems...
-        //here we check one last time for finished to make sure to avoid if possible
+        //here we check one last time for finished to make sure to avoid a kill if possible
         if (not FThread.Finished)
           and (LForceKill)
         then
         begin
-          DoOnDone(LThread);
           KillThread(FThread.Handle);
           FKilled:=True;
+          Exit;
         end;
-      finally
-        RemoveID(FID,FList);
-      end;
-    end
-    //otherwise just wait until a stop request is made
-    else
-    begin
-      try
-        while not FStopRequest
-          and (Assigned(FThread) and (not FThread.Finished))do
-        begin
-          if not Assigned(FThread) then
-            Exit;
-          if FThread.Finished then
-            Exit;
-          Sleep(10);
-        end;
-      finally
-        DoOnDone(LThread);
       end;
     end;
+
+    //wait until the thread is finished
+    while Assigned(FThread) and not FThread.Finished do
+    begin
+      //check if we should stop
+      FStopRequest := DoGetShouldStop;
+
+      //terminate the thread and wait for it to respond
+      if FStopRequest then
+        FThread.Terminate;
+
+      //sleep smallest granularity
+      Sleep(1);
+    end;
   finally
+    //raises done, and removes from list
     RemoveID(FID,FList);
   end;
 end;
@@ -867,9 +886,12 @@ begin
     FOnDone(AThread);
 end;
 
-procedure TEZThreadImpl.TMonitorThread.StopMonitor;
+function TEZThreadImpl.TMonitorThread.DoGetShouldStop: Boolean;
 begin
-  FStopRequest:=True;
+  Result := False;
+
+  if Assigned(FCheckStop) then
+    Result := FCheckStop;
 end;
 
 destructor TEZThreadImpl.TMonitorThread.Destroy;
@@ -1136,6 +1158,11 @@ begin
   end;
 end;
 
+function TEZThreadImpl.GetMonitorStop: Boolean;
+begin
+  Result := FStopMonitor;
+end;
+
 function TEZThreadImpl.DoGetThreadClass: TInternalThreadClass;
 begin
   //base class returns base internal thread class
@@ -1390,6 +1417,7 @@ begin
   DoSetupInternalThread(LIntThread);
 
   //create and setup monitor thread
+  FStopMonitor := False;
   LMonThread:=TMonitorThread.Create(True);
   LMonThread.FreeOnTerminate:=True;//memory freed automatically
   LMonThread.ID:=TGuid.NewGuid.ToString();
@@ -1397,17 +1425,18 @@ begin
   LMonThread.List:=FMonitorThreads;
   LMonThread.InternalThread:=LIntThread;
   LMonThread.OnDone:=UpdateState;
+  LMonThread.CheckStop := GetMonitorStop;
 
   //for await support, add ourself to the collection
   Collection.Add(LThread);
 
   Critical.Enter;
   try
-    //start the internal thread
-    LIntThread.Start;
-
     //update state
     FState:=esStarted;
+
+    //start the internal thread
+    LIntThread.Start;
 
     //start the monitor thread
     LMonThread.Start;
@@ -1417,11 +1446,9 @@ begin
 end;
 
 procedure TEZThreadImpl.Stop;
-var
-  I:Integer;
 begin
-  for I:=0 to Pred(FMonitorThreads.Count) do
-    FMonitorThreads.Data[I].StopMonitor;
+  //signal to remaining threads to stop
+  FStopMonitor := True;
 
   //monitor threads will remove themselves from the list
   //so wait until this has been done
@@ -1431,6 +1458,7 @@ end;
 
 constructor TEZThreadImpl.Create;
 begin
+  FStopMonitor := False;
   FState:=esStopped;
   FMaxRunTime:=0;
   FSynchStopEvents:=False;

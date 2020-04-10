@@ -280,9 +280,14 @@ begin
 
           //setup and start the work
           LWorker
-            .Setup(LWork.Callback.Start, LWork.Callback.Error, LWork.Callback.Error)
-            .Setup(LWork.Nested.Start, LWork.Nested.Error, LWork.Nested.Error)
-            .Setup(LWork.Method.Start, LWork.Method.Error, LWork.Method.Error)
+            .Events
+              .UpdateOnStart(FPool.Events.OnStart)
+              .UpdateOnStartNestedCallback(FPool.Events.OnStartNestedCallback)
+              .UpdateOnStartCallback(FPool.Events.OnStartCallback)
+              .Thread
+            .Setup(LWork.Callback.Start, LWork.Callback.Error, LWork.Callback.Success)
+            .Setup(LWork.Nested.Start, LWork.Nested.Error, LWork.Nested.Success)
+            .Setup(LWork.Method.Start, LWork.Method.Error, LWork.Method.Success)
             .Start
         finally
           FPool.FCritical.Leave;
@@ -342,14 +347,18 @@ begin
 end;
 
 procedure TEZThreadPoolImpl.RemovePlaceHolder;
+var
+  LPlaceHolder : IPlaceHolderThread;
 begin
   FCritical.Enter;
   try
     if FPlaceHolders.Count < 1 then
       Exit;
 
+    LPlaceHolder := FPlaceHolders.Items[0] as IPlaceHolderThread;
+
     //remove the placeholder from the collection
-    RemoveThreadFromAwaitCollection(FPlaceHolders[0]);
+    RemoveThreadFromAwaitCollection(LPlaceHolder);
 
     //delete from thread list
     FPlaceHolders.Delete(0);
@@ -368,9 +377,19 @@ begin
     begin
       if not FWorking[I] then
       begin
-        //mark as working and fetch the free worker
-        FWorking[I] := True;
-        Result := FWorkers[I];
+        //now that we found one, aquire a lock to ensure another thread hasn't '
+        //picked this worker up
+        FCritical.Enter;
+        try
+          if FWorking[I] then
+            Continue;
+
+          //mark as working and fetch the free worker
+          FWorking[I] := True;
+          Result := FWorkers[I];
+        finally
+          FCritical.Leave;
+        end;
 
         //add the worker to the group for await support
         AddThreadToAwaitCollection(Result);
