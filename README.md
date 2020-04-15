@@ -9,7 +9,7 @@ some features at a glance...
 
 * argument *capturing* by using the `.AddArg()` method
 * reference counted threads ensuring memory is cleaned up
-* *Await()* support method (similar to c#) can wait threads, groups, all threads, pools
+* *Await()* support method (similar to c#) can wait for threads, groups, all threads, pools to complete
 * ez thread pool for fixed worker size and easy to use fluent methods
 * works with nested, callbacks, object methods (or all at the same time)
 * events for start, stop, error, success, etc... for flexibility
