@@ -3,9 +3,21 @@ a simple and safe way to work with threads
 
 To request features or report a bug, open a github issue with details/steps to reproduce
 
+# Features
+
+some features at a glance...
+
+* argument *capturing* by using the `.AddArg()` method
+* reference counted threads ensuring memory is cleaned up
+* *Await()* support method (similar to c#) can wait threads, groups, all threads, pools
+* ez thread pool for fixed worker size and easy to use fluent methods
+* works with nested, callbacks, object methods (or all at the same time)
+* events for start, stop, error, success, etc... for flexibility
+* did I mention it was easy? :)
+
 # Sample
 
-Below is a sample pulled from the console tester application which shows a possible use for ezthreads
+Below is a sample pulled from the console tester application which shows a possible use for ezthreads:
 
 ```pascal
 (*
@@ -65,6 +77,57 @@ begin
 end;
 ```
 
+Here is a sample pulled from the pool tester which shows usage if it:
+
+```pascal
+(*
+  test that shows two simple tasks completing in parallel
+  by an ezthread pool
+*)
+procedure TestTwoTasks;
+var
+  LPool : IEZThreadPool;
+  LJobOneFinished,
+  LJobTwoFinished: Boolean;
+
+  //simple parallel job
+  procedure JobOne(const AThread : IEZThread);
+  begin
+    //do some work
+    Sleep(100);
+    LJobOneFinished := True;
+  end;
+
+  //simple parallel job
+  procedure JobTwo(const AThread : IEZThread);
+  begin
+    //do some work
+    Sleep(100);
+    LJobTwoFinished := True;
+  end;
+
+begin
+  //flags for checking if both jobs finished
+  LJobOneFinished := False;
+  LJobTwoFinished := False;
+
+  //init a pool with two workers
+  LPool := NewEZThreadPool(2);
+
+  //work two jobs
+  LPool
+    .Queue(JobOne, nil, nil)
+    .Queue(JobTwo, nil, nil)
+    .Start; //start the pool
+
+  //wait until both jobs finish
+  Await(LPool);
+
+  //write status
+  WriteLn(Format('TestTwoTasks::[success]:%s', [BoolToStr(LJobOneFinished and LJobTwoFinished, True)]));
+end;
+```
+
 # How To Use
 
 1. download and install lazarus if you don't already have it (http://www.lazarus-ide.org)
@@ -78,3 +141,6 @@ end;
 **Tip Jar**
   * :dollar: BTC - bc1q55qh7xptfgkp087sfr5ppfkqe2jpaa59s8u2lz
   * :euro: LTC - LPbvTsFDZ6EdaLRhsvwbxcSfeUv1eZWGP6
+
+
+Happy Threading :)
