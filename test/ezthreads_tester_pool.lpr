@@ -132,23 +132,47 @@ end;
      so each worker will have their own copy
 *)
 procedure TestSharedArgs;
-  const
-    FOUND = 'found';
+var
+  LJobOneFound,
+  LJobTwoFound: Boolean;
+  LPool: IEZThreadPool;
+const
+  FOUND = 'found';
 
-  //simple parallel job
+
+  //simple parallel job to check if arg exists
   procedure JobOne(const AThread : IEZThread);
   begin
-    //do some work
-    Sleep(100);
+    LJobOneFound := AThread.Exists[FOUND];
   end;
 
-  //simple parallel job
   procedure JobTwo(const AThread : IEZThread);
   begin
-    //do some work
-    Sleep(100);
+    //do some work to check if arg exists
+    LJobTwoFound := AThread.Exists[FOUND];
   end;
 begin
+  //flags for checking if both jobs finding the argument
+  LJobOneFound := False;
+  LJobTwoFound := False;
+
+  //init a pool with two workers
+  LPool := NewEZThreadPool(2);
+
+  //add the "global" argument which will be passed to workers
+  LPool.AddArg(FOUND, True);
+
+  //work two jobs
+  LPool
+    .Queue(JobOne, nil, nil)
+    .Queue(JobTwo, nil, nil)
+    .Start; //start the pool
+
+  //wait until both jobs finish
+  Await(LPool);
+
+  //write status
+  WriteLn(Format('TestSharedArgs::[success]:%s', [BoolToStr(LJobOneFound and LJobTwoFound, True)]));
 end;
 
 
@@ -157,7 +181,7 @@ begin
   TestStartStop;
   TestSingleTask;
   TestTwoTasks;
-  //TestSharedArgs;
+  TestSharedArgs;
 
   //wait for user input
   ReadLn;
