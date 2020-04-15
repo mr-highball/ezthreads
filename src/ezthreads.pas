@@ -25,6 +25,7 @@ unit ezthreads;
 
 {$mode delphi}{$H+}
 {$modeswitch nestedprocvars}
+{.$define EZTHREAD_TRACE}
 
 interface
 
@@ -644,11 +645,11 @@ var
   LThread : IEZThread;
   LPool : IEZThreadPool;
 begin
-  if not Assigned(AThread) then
-    Exit;
-
   //ensure we have a reference
   LThread := AThread;
+
+  if not Assigned(LThread) then
+    Exit;
 
   //nothing to do if the thread hasn't been started
   if LThread.State <> esStarted then
@@ -781,9 +782,16 @@ var
     safely removes a monitor thread by id from a monitor list
   *)
   procedure RemoveID(Const AID:String;Const AList:TMonitorList);
+  var
+    LThread : IEZThread;
   begin
+    //local ref
+    LThread := FThread.EZThread;
+
     Critical.Enter;
     try
+     {$IFDEF EZTHREAD_TRACE}WriteLn('RemoveID::', Self.ClassName, '[id]:', LThread.Settings.Await.ThreadID, ' [collectionId]:', AID);{$ENDIF}
+
       //raise stop event safely as long as it wasn't killed forcefully
       //(in this case it will have already been called)
       try
@@ -794,7 +802,7 @@ var
 
       //call done after all other events since it's the last in the chain
       try
-        DoOnDone(FThread.EZThread);
+        DoOnDone(LThread);
       finally
       end;
 
@@ -810,6 +818,7 @@ var
 
 begin
   try
+   {$IFDEF EZTHREAD_TRACE}WriteLn('Monitor::', 'start [id]:', FThread.EZThread.Settings.Await.ThreadID);{$ENDIF}
     FStopRequest := DoGetShouldStop;
     FKilled := False;
     LElapsed:=0;
@@ -884,8 +893,10 @@ begin
       Sleep(1);
     end;
   finally
+   {$IFDEF EZTHREAD_TRACE}WriteLn('Monitor::', 'finish (pre remove) [id]:', FThread.EZThread.Settings.Await.ThreadID);{$ENDIF}
     //raises stop events, and removes from list
     RemoveID(FID,FList);
+   {$IFDEF EZTHREAD_TRACE}WriteLn('Monitor::', 'finish (post remove) [id]:', FThread.EZThread.Settings.Await.ThreadID);{$ENDIF}
   end;
 end;
 
@@ -914,36 +925,45 @@ end;
 
 function TEZThreadImpl.TInternalThread.GetThread: IEZThread;
 begin
-  Result:=FThread;
+  Result := FThread;
 end;
 
 procedure TEZThreadImpl.TInternalThread.SetThread(const AValue: IEZThread);
 begin
-  FThread:=nil;
-  FThread:=AValue;
+  FThread := nil;
+  FThread := AValue;
 end;
 
 procedure TEZThreadImpl.TInternalThread.Execute;
+var
+  LThread : IEZThread;
 begin
-  if Assigned(FThread) then
+  //local ref
+  LThread := FThread;
+
+ {$IFDEF EZTHREAD_TRACE}WriteLn('Execute::', Self.ClassName, '[id]:', LThread.Settings.Await.ThreadID, ' [finished]:', BoolToStr(Finished, True), ' [terminated]:', BoolToStr(Terminated, True));{$ENDIF}
+  if Assigned(LThread) then
   begin
     try
       //attempt to run all applicable StartMethod methods
       if Assigned(FStart) then
       begin
-        FStart(FThread);
+        {$IFDEF EZTHREAD_TRACE}WriteLn('Execute::MethodStart::', Self.ClassName, '[id]:', LThread.Settings.Await.ThreadID);{$ENDIF}
+        FStart(LThread);
         if Terminated then
           Exit;
       end;
       if Assigned(FStartCall) then
       begin
-        FStartCall(FThread);
+        {$IFDEF EZTHREAD_TRACE}WriteLn('Execute::CallbackStart::', Self.ClassName, '[id]:', LThread.Settings.Await.ThreadID);{$ENDIF}
+        FStartCall(LThread);
         if Terminated then
           Exit;
       end;
       if Assigned(FStartNestCall) then
       begin
-        FStartNestCall(FThread);
+        {$IFDEF EZTHREAD_TRACE}WriteLn('Execute::NestedCallbackStart::', Self.ClassName, '[id]:', LThread.Settings.Await.ThreadID);{$ENDIF}
+        FStartNestCall(LThread);
         if Terminated then
           Exit;
       end;
@@ -951,19 +971,22 @@ begin
       //now run success methods
       if Assigned(FSuccess) then
       begin
-        FSuccess(FThread);
+        {$IFDEF EZTHREAD_TRACE}WriteLn('Execute::MethodSuccess::', Self.ClassName, '[id]:', LThread.Settings.Await.ThreadID);{$ENDIF}
+        FSuccess(LThread);
         if Terminated then
           Exit;
       end;
       if Assigned(FSuccessCall) then
       begin
-        FSuccessCall(FThread);
+        {$IFDEF EZTHREAD_TRACE}WriteLn('Execute::CallbackSuccess::', Self.ClassName, '[id]:', LThread.Settings.Await.ThreadID);{$ENDIF}
+        FSuccessCall(LThread);
         if Terminated then
           Exit;
       end;
       if Assigned(FSuccessNestCall) then
       begin
-        FSuccessNestCall(FThread);
+        {$IFDEF EZTHREAD_TRACE}WriteLn('Execute::NestedCallbackSuccess::', Self.ClassName, '[id]:', LThread.Settings.Await.ThreadID);{$ENDIF}
+        FSuccessNestCall(LThread);
         if Terminated then
           Exit;
       end;
@@ -975,47 +998,57 @@ begin
       //guarantee all ErrorMethod methods are called with try..finally
       if Assigned(FError) then
         try
-          FError(FThread);
+          FError(LThread);
         finally
         end;
       if Assigned(FErrorCall) then
         try
-          FErrorCall(FThread);
+          FErrorCall(LThread);
         finally
         end;
       if Assigned(FErrorNestCall) then
         try
-          FErrorNestCall(FThread);
+          FErrorNestCall(LThread);
         finally
         end;
     end
     end;
   end;
+  {$IFDEF EZTHREAD_TRACE}WriteLn('Execute::Stop::', Self.ClassName, '[id]:', LThread.Settings.Await.ThreadID, ' [finished]:', BoolToStr(Finished, True), ' [terminated]:', BoolToStr(Terminated, True));{$ENDIF}
 end;
 
 procedure TEZThreadImpl.TInternalThread.RaiseStopEvents;
+var
+  LThread : IEZThread;
 begin
+  //local ref
+  LThread := EZThread;
+
   //below we use the appropriate synch helper object to handle the
   //method. these objects free themselves once done
-  if FThread.Settings.SynchronizeStopEvents then
+  if LThread.Settings.SynchronizeStopEvents then
   begin
-    if Assigned(FThread.Events.OnStop) then
-      TObjHelper.Create(FThread,FCaller,FThread.Events.OnStop).SynchMethod;
-    if Assigned(FThread.Events.OnStopCallback) then
-      TCallHelper.Create(FThread,FCaller,FThread.Events.OnStopCallback).SynchMethod;
-    if Assigned(FThread.Events.OnStopNestedCallback) then
-      TNestCallHelper.Create(FThread,FCaller,FThread.Events.OnStopNestedCallback).SynchMethod;
+    if Assigned(LThread.Events.OnStop) then
+      TObjHelper.Create(LThread, FCaller, LThread.Events.OnStop).SynchMethod;
+
+    if Assigned(LThread.Events.OnStopCallback) then
+      TCallHelper.Create(LThread, FCaller, LThread.Events.OnStopCallback).SynchMethod;
+
+    if Assigned(LThread.Events.OnStopNestedCallback) then
+      TNestCallHelper.Create(LThread, FCaller, LThread.Events.OnStopNestedCallback).SynchMethod;
   end
   //otherwise caller does not want the stop events to be raised (perhaps
   //they are in a console app? https://forum.lazarus.freepascal.org/index.php?topic=23442.0)
   else
   begin
-    if Assigned(FThread.Events.OnStop) then
-      FThread.Events.OnStop(FThread);
-    if Assigned(FThread.Events.OnStopCallback) then
-      FThread.Events.OnStopCallback(FThread);
-    if Assigned(FThread.Events.OnStopNestedCallback) then
-      FThread.Events.OnStopNestedCallback(FThread);
+    if Assigned(LThread.Events.OnStop) then
+      LThread.Events.OnStop(LThread);
+
+    if Assigned(LThread.Events.OnStopCallback) then
+      LThread.Events.OnStopCallback(LThread);
+
+    if Assigned(LThread.Events.OnStopNestedCallback) then
+      LThread.Events.OnStopNestedCallback(LThread);
   end;
 end;
 
@@ -1150,6 +1183,8 @@ begin
     if FMonitorThreads.Count <= 1 then
     begin
       FState:=esStopped;
+
+      {$IFDEF EZTHREAD_TRACE}WriteLn('UpdateState::Stopped::', '[id]:', AThread.Settings.Await.ThreadID);{$ENDIF}
 
       //once stopped, remove this thread from the collection
       Collection.Remove(AThread);
@@ -1391,6 +1426,7 @@ var
   LMonThread:TMonitorThread;
   LThread:IEZThread;
 begin
+  {$IFDEF EZTHREAD_TRACE}WriteLn('Start::', Self.Classname, '[id]:', FThreadID);{$ENDIF}
   //raise on start events
   if Assigned(FOnStart) then
     FOnStart(GetThread);
@@ -1448,6 +1484,7 @@ end;
 
 procedure TEZThreadImpl.Stop;
 begin
+  {$IFDEF EZTHREAD_TRACE}WriteLn('Stop::', Self.Classname, '[id]:', FThreadID);{$ENDIF}
   //signal to remaining threads to stop
   FStopMonitor := True;
 
@@ -1455,6 +1492,7 @@ begin
   //so wait until this has been done
   while FMonitorThreads.Count > 0 do
     Continue;
+  {$IFDEF EZTHREAD_TRACE}WriteLn('Stop::Finished::', Self.Classname, '[id]:', FThreadID);{$ENDIF}
 end;
 
 constructor TEZThreadImpl.Create;
@@ -1476,9 +1514,11 @@ end;
 
 destructor TEZThreadImpl.Destroy;
 begin
+  {$IFDEF EZTHREAD_TRACE}WriteLn('Destroy::Start::', Self.Classname, '[id]:', FThreadID);{$ENDIF}
   Stop;
   FMonitorThreads.Free;
   SetLength(FArgs,0);
+  {$IFDEF EZTHREAD_TRACE}WriteLn('Destroy::Stop::', Self.Classname, '[id]:', FThreadID);{$ENDIF}
   inherited Destroy;
 end;
 

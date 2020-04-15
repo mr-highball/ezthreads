@@ -24,6 +24,7 @@ unit ezthreads.pool;
 
 {$mode delphi}
 {$modeswitch nestedprocvars}
+{.$define EZTHREAD_TRACE}
 
 interface
 
@@ -126,10 +127,16 @@ type
         FCall: TCallbackSetup;
         FMethod: TMethodSetup;
         FNested: TNestedCallbackSetup;
+
+        procedure NilWork;
       public
         property Callback : TCallbackSetup read FCall write FCall;
         property Nested : TNestedCallbackSetup read FNested write FNested;
         property Method : TMethodSetup read FMethod write FMethod;
+
+        constructor Create(const ACallback : TCallbackSetup); overload;
+        constructor Create(const ANested : TNestedCallbackSetup); overload;
+        constructor Create(const AMethod : TMethodSetup); overload;
       end;
 
       (*
@@ -225,6 +232,42 @@ begin
   Result.UpdateWorkerCount(AWorkers);
 end;
 
+{ TEZThreadPoolImpl.TQueueItem }
+
+procedure TEZThreadPoolImpl.TQueueItem.NilWork;
+begin
+  FCall.Error := nil;
+  FCall.Start := nil;
+  FCall.Success := nil;
+
+  FMethod.Error := nil;
+  FMethod.Start := nil;
+  FMethod.Success := nil;
+
+  FNested.Error := nil;
+  FNested.Start := nil;
+  FNested.Success := nil;
+end;
+
+constructor TEZThreadPoolImpl.TQueueItem.Create(const ACallback: TCallbackSetup);
+begin
+  NilWork;
+  FCall := ACallback;
+end;
+
+constructor TEZThreadPoolImpl.TQueueItem.Create(
+  const ANested: TNestedCallbackSetup);
+begin
+  NilWork;
+  FNested := ANested;
+end;
+
+constructor TEZThreadPoolImpl.TQueueItem.Create(const AMethod: TMethodSetup);
+begin
+  NilWork;
+  FMethod := AMethod;
+end;
+
 { TEZThreadPoolImpl.TPoolWorkerThread }
 
 procedure TEZThreadPoolImpl.TPoolWorkerThread.Execute;
@@ -235,6 +278,7 @@ var
   I: Integer;
 begin
   try
+   {$IFDEF EZTHREAD_TRACE}WriteLn('PoolExecute::', Self.ClassName);{$ENDIF}
     //run the start methods
     if Assigned(StartCallback) then
       StartCallback(Thread);
@@ -262,6 +306,8 @@ begin
         if FPool.FWork.Count < 1 then
           Continue;
 
+        {$IFDEF EZTHREAD_TRACE}WriteLn('PoolExecute::', Self.ClassName, ' dequeued work');{$ENDIF}
+
         //dequeue some work
         LWork := FPool.FWork.Dequeue;
 
@@ -275,6 +321,8 @@ begin
         //get a worker (this blocks until one frees up)
         LWorker := FPool.GetFreeWorker;
 
+       {$IFDEF EZTHREAD_TRACE}WriteLn('PoolExecute::', Self.ClassName, ' found worker ', LWorker.Settings.Await.ThreadID);{$ENDIF}
+
         //setup and start the work
         LWorker
           .Events
@@ -285,7 +333,9 @@ begin
           .Setup(LWork.Callback.Start, LWork.Callback.Error, LWork.Callback.Success)
           .Setup(LWork.Nested.Start, LWork.Nested.Error, LWork.Nested.Success)
           .Setup(LWork.Method.Start, LWork.Method.Error, LWork.Method.Success)
-          .Start
+          .Start;
+
+       {$IFDEF EZTHREAD_TRACE}WriteLn('PoolExecute::', Self.ClassName, ' started worker ', LWorker.Settings.Await.ThreadID);{$ENDIF}
       finally
         FPool.FCritical.Leave;
       end;
@@ -302,12 +352,9 @@ begin
           LStillWorking := True;
     end;
 
-
+    {$IFDEF EZTHREAD_TRACE}WriteLn('PoolExecute::', Self.ClassName, ' finished');{$ENDIF}
   except on E : Exception do
     try
-      if Terminated then
-        Exit;
-
       //run the error methods
       if Assigned(ErrorCallback) then
         ErrorCallback(Thread);
@@ -333,6 +380,7 @@ procedure TEZThreadPoolImpl.AddPlaceHolder;
 var
   LThread : IPlaceHolderThread;
 begin
+ {$IFDEF EZTHREAD_TRACE}WriteLn('AddPlaceHolder::', Self.ClassName);{$ENDIF}
   LThread := TPlaceHolderThreadImpl.Create;
 
   //update the group id to that of the workers
@@ -354,6 +402,7 @@ procedure TEZThreadPoolImpl.RemovePlaceHolder;
 var
   LPlaceHolder : IPlaceHolderThread;
 begin
+ {$IFDEF EZTHREAD_TRACE}WriteLn('RemovePlaceHolder::', Self.ClassName);{$ENDIF}
   FCritical.Enter;
   try
     if FPlaceHolders.Count < 1 then
@@ -421,6 +470,7 @@ function TEZThreadPoolImpl.Queue(const AStart: TThreadCallback;
   const AError: TThreadCallback; const ASuccess: TThreadCallback): IEZThreadPool;
 var
   LWork : TQueueItem;
+  LCall : TCallbackSetup;
 begin
   Result := Self;
 
@@ -430,10 +480,15 @@ begin
   //queue up a callback work item
   FCritical.Enter;
   try
-    LWork.Callback.Start := AStart;
-    LWork.Callback.Error := AError;
-    LWork.Callback.Success := ASuccess;
+    //initialize work
+    LCall.Start := AStart;
+    LCall.Error := AError;
+    LCall.Success := ASuccess;
 
+    //create
+    LWork := TQueueItem.Create(LCall);
+
+    //queue the work
     FWork.Enqueue(LWork);
   finally
     FCritical.Leave;
@@ -444,19 +499,25 @@ function TEZThreadPoolImpl.Queue(const AStart: TThreadNestedCallback;
   const AError: TThreadNestedCallback; const ASuccess: TThreadNestedCallback): IEZThreadPool;
 var
   LWork : TQueueItem;
+  LNested : TNestedCallbackSetup;
 begin
   Result := Self;
 
   //adds a placeholder thread
   AddPlaceHolder;
 
-  //queue up a nested work item
+  //queue up a callback work item
   FCritical.Enter;
   try
-    LWork.Nested.Start := AStart;
-    LWork.Nested.Error := AError;
-    LWork.Nested.Success := ASuccess;
+    //initialize work
+    LNested.Start := AStart;
+    LNested.Error := AError;
+    LNested.Success := ASuccess;
 
+    //create
+    LWork := TQueueItem.Create(LNested);
+
+    //queue the work
     FWork.Enqueue(LWork);
   finally
     FCritical.Leave;
@@ -467,19 +528,25 @@ function TEZThreadPoolImpl.Queue(const AStart: TThreadMethod;
   const AError: TThreadMethod; const ASuccess: TThreadMethod): IEZThreadPool;
 var
   LWork : TQueueItem;
+  LMethod : TMethodSetup;
 begin
   Result := Self;
 
   //adds a placeholder thread
   AddPlaceHolder;
 
-  //queue up a object method work item
+  //queue up a callback work item
   FCritical.Enter;
   try
-    LWork.Method.Start := AStart;
-    LWork.Method.Error := AError;
-    LWork.Method.Success := ASuccess;
+    //initialize work
+    LMethod.Start := AStart;
+    LMethod.Error := AError;
+    LMethod.Success := ASuccess;
 
+    //create
+    LWork := TQueueItem.Create(LMethod);
+
+    //queue the work
     FWork.Enqueue(LWork);
   finally
     FCritical.Leave;
@@ -495,20 +562,29 @@ var
 
 const
   INTERNAL_INDEX = 'internal_lock_index';
-
+  POOL = 'pool';
   (*
     when a worker stops, write to the working array
   *)
   procedure WorkerStop(const AThread : IEZThread);
   var
     I : Integer;
+    LThread : IEZThread;
+    LSelf: TEZThreadPoolImpl;
   begin
-    FCritical.Enter;
+    //local ref
+    LThread := AThread;
+
+    //self pointer won't work here, so cast the pool arg
+    LSelf := TEZThreadPoolImpl(Pointer(PtrInt(LThread[POOL])));
+
+   {$IFDEF EZTHREAD_TRACE}WriteLn('WorkerStop::', LSelf.ClassName, '[id]:', LThread.Settings.Await.ThreadID);{$ENDIF}
+    LSelf.FCritical.Enter;
     try
-      I := AThread[INTERNAL_INDEX];
-      FWorking[I] := False;
+      I := LThread[INTERNAL_INDEX];
+      LSelf.FWorking[I] := False;
     finally
-      FCritical.Leave;
+      LSelf.FCritical.Leave;
     end;
   end;
 
@@ -553,7 +629,10 @@ begin
           .UpdateGroupID(FWorkerGroup)
           .Thread
         //update the index of the worker and set the stop callback
-        .AddArg(INTERNAL_INDEX, I).Events.UpdateOnStopNestedCallback(WorkerStop);
+        .AddArg(INTERNAL_INDEX, I)
+        .AddArg(POOL, PtrInt(Pointer(Self)))
+        .Events
+          .UpdateOnStopNestedCallback(WorkerStop).Thread;
 
     FWorkers.Add(LThread);
     LThread := nil;//nil local ref since we re-use the variable
@@ -576,10 +655,12 @@ end;
 
 destructor TEZThreadPoolImpl.Destroy;
 begin
+ {$IFDEF EZTHREAD_TRACE}WriteLn('PoolDestroy::', Self.ClassName);{$ENDIF}
   Stop;
   FWork.Free;
   FCritical.Free;
   inherited Destroy;
+ {$IFDEF EZTHREAD_TRACE}WriteLn('PoolDead::', Self.ClassName);{$ENDIF}
 end;
 
 end.
