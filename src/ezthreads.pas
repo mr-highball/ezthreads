@@ -517,6 +517,8 @@ type
     procedure UpdateState(AThread:IEZThread);
     function GetMonitorStop : Boolean;
   strict protected
+    function GetArgs : PEZArgs;
+
     (*
       method can be overridden to instantiate a child internal thread
       instead of the base internal thread
@@ -1197,6 +1199,11 @@ end;
 function TEZThreadImpl.GetMonitorStop: Boolean;
 begin
   Result := FStopMonitor;
+end;
+
+function TEZThreadImpl.GetArgs: PEZArgs;
+begin
+  Result := @FArgs;
 end;
 
 function TEZThreadImpl.DoGetThreadClass: TInternalThreadClass;

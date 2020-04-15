@@ -167,6 +167,9 @@ type
 
     procedure AddPlaceHolder;
     procedure RemovePlaceHolder;
+
+    const
+      ARGS = 'args';
   public
     type
 
@@ -276,6 +279,7 @@ var
   LWorker : IEZThread;
   LStillWorking: Boolean;
   I: Integer;
+  LArgs: PEZArgs;
 begin
   try
    {$IFDEF EZTHREAD_TRACE}WriteLn('PoolExecute::', Self.ClassName);{$ENDIF}
@@ -332,9 +336,13 @@ begin
             .Thread
           .Setup(LWork.Callback.Start, LWork.Callback.Error, LWork.Callback.Success)
           .Setup(LWork.Nested.Start, LWork.Nested.Error, LWork.Nested.Success)
-          .Setup(LWork.Method.Start, LWork.Method.Error, LWork.Method.Success)
-          .Start;
+          .Setup(LWork.Method.Start, LWork.Method.Error, LWork.Method.Success);
 
+       LArgs := PEZArgs(PtrInt(FPool[ARGS]));
+       for I := 0 to High(LArgs^) do
+        LWorker.AddArg(LArgs^[I].Name, LArgs^[I].Data);
+
+       LWorker.Start;
        {$IFDEF EZTHREAD_TRACE}WriteLn('PoolExecute::', Self.ClassName, ' started worker ', LWorker.Settings.Await.ThreadID);{$ENDIF}
       finally
         FPool.FCritical.Leave;
@@ -651,6 +659,7 @@ begin
   FCritical := TCriticalSection.Create;
   FWorkers := TEZThreads.Create;
   FWorkerGroup := TGuid.NewGuid.ToString;
+  AddArg(ARGS, PtrInt(GetArgs));
 end;
 
 destructor TEZThreadPoolImpl.Destroy;
