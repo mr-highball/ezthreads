@@ -120,12 +120,14 @@ type
   *)
   IEZThreadSettings = interface
     ['{1EE5C618-DA56-4101-BE75-1FD25F131ED2}']
-    function GetAwait: IEZAwait;
     //property methods
+    function GetAwait: IEZAwait;
     function GetMaxRunTime: Cardinal;
     function GetSynchStopEvents: Boolean;
     function GetThread: IEZThread;
     function GetForceTerminate: Boolean;
+    function GetThreadName: String;
+    procedure SetThreadName(const AValue: String);
 
     //properties
     (*
@@ -145,6 +147,11 @@ type
       when true, stop events are wrapped in a synchronize call
     *)
     property SynchronizeStopEvents : Boolean read GetSynchStopEvents;
+
+    (*
+      the name used for debugging
+    *)
+    property Name : String read GetThreadName write SetThreadName;
 
     property Await : IEZAwait read GetAwait;
 
@@ -490,6 +497,8 @@ type
     function GetSettings: IEZThreadSettings;
     function GetEvents: IEZThreadEvents;
     function GetThreadID: String;
+    function GetThreadName: String;
+    procedure SetThreadName(const AValue: String);
   strict private
     FMaxRunTime: Cardinal;
     FStart,
@@ -513,7 +522,8 @@ type
     FForceTerminate,
     FStopMonitor: Boolean;
     FThreadID,
-    FGroupID: String;
+    FGroupID,
+    FName: String;
     FState: TEZState;
     function IndexOfArg(Const AName:String):Integer;
     procedure UpdateState(AThread:IEZThread);
@@ -549,6 +559,7 @@ type
     property ForceTerminate : Boolean read GetForceTerminate;
     property GroupID : String read GetGroupID;
     property ThreadID : String read GetThreadID;
+    property Name : String read GetThreadName write SetThreadName;
 
     property Thread : IEZThread read GetThread;
     property Settings:IEZThreadSettings read GetSettings;
@@ -592,8 +603,10 @@ type
     function Setup(Const AStart:TThreadMethod):IEZThread;overload;
     function Group(Const AThread:IEZThread):IEZAwait;
     function UpdateGroupID(Const AGroupID:String):IEZAwait;
+
     procedure Start;
     procedure Stop;
+
     constructor Create;virtual;
     destructor Destroy; override;
   end;
@@ -1163,6 +1176,16 @@ begin
   Result:=FThreadID;
 end;
 
+function TEZThreadImpl.GetThreadName: String;
+begin
+  Result := FName;
+end;
+
+procedure TEZThreadImpl.SetThreadName(const AValue: String);
+begin
+  FName := AValue;
+end;
+
 function TEZThreadImpl.IndexOfArg(const AName: String): Integer;
 var
   I:Integer;
@@ -1489,6 +1512,7 @@ begin
   LIntThread.ErrorCallback:=FErrorCall;
   LIntThread.ErrorNestedCallback:=FErrorNestCall;
   LIntThread.Caller:=TThread.CurrentThread;
+  LIntThread.NameThreadForDebugging(FName, LIntThread.ThreadID);
   DoSetupInternalThread(LIntThread);
 
   //create and setup monitor thread
@@ -1501,6 +1525,7 @@ begin
   LMonThread.InternalThread:=LIntThread;
   LMonThread.OnDone:=UpdateState;
   LMonThread.CheckStop := GetMonitorStop;
+  LMonThread.NameThreadForDebugging(FName + '_monitor', LMonThread.ThreadID);
 
   //for await support, add ourself to the collection
   Collection.Add(LThread);
@@ -1536,18 +1561,19 @@ end;
 constructor TEZThreadImpl.Create;
 begin
   FStopMonitor := False;
-  FState:=esStopped;
-  FMaxRunTime:=0;
-  FSynchStopEvents:=False;
-  FForceTerminate:=False;
-  FOnStart:=nil;
-  FOnStop:=nil;
-  FOnStartCall:=nil;
-  FOnStopCall:=nil;
+  FState := esStopped;
+  FMaxRunTime := 0;
+  FSynchStopEvents := False;
+  FForceTerminate := False;
+  FOnStart := nil;
+  FOnStop := nil;
+  FOnStartCall := nil;
+  FOnStopCall := nil;
   SetLength(FArgs,0);
-  FThreadID:=TGuid.NewGuid.ToString;
-  FGroupID:=TGuid.NewGuid.ToString;
-  FMonitorThreads:=TMonitorList.Create(False);
+  FThreadID := TGuid.NewGuid.ToString;
+  FName := FThreadID;
+  FGroupID := TGuid.NewGuid.ToString;
+  FMonitorThreads := TMonitorList.Create(False);
 end;
 
 destructor TEZThreadImpl.Destroy;
