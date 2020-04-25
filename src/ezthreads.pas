@@ -164,6 +164,7 @@ type
     function UpdateMaxRuntime(Const ARuntime:Cardinal):IEZThreadSettings;
     function UpdateForceTerminate(Const AForce:Boolean):IEZThreadSettings;
     function UpdateSynchronizeStopEvents(Const ASynch:Boolean):IEZThreadSettings;
+    function UpdateThreadName(const AName : String) : IEZThreadSettings;
   end;
 
   { IEZThreadEvents }
@@ -579,6 +580,7 @@ type
     function UpdateMaxRuntime(Const ARuntime:Cardinal):IEZThreadSettings;
     function UpdateForceTerminate(Const AForce:Boolean):IEZThreadSettings;
     function UpdateSynchronizeStopEvents(Const ASynch:Boolean):IEZThreadSettings;
+    function UpdateThreadName(const AName : String) : IEZThreadSettings;
     function AddArg(Const AName:String;Const AArg:Variant;
       Const AOnFinish:TArgCleanupMethod;
       Const AOnFinishCall:TArgCleanupCallback;
@@ -1340,6 +1342,12 @@ function TEZThreadImpl.UpdateSynchronizeStopEvents(const ASynch: Boolean): IEZTh
 begin
   FSynchStopEvents:=ASynch;
   Result:=GetSettings;
+end;
+
+function TEZThreadImpl.UpdateThreadName(const AName: String): IEZThreadSettings;
+begin
+  Result := GetSettings;
+  FName := AName;
 end;
 
 function TEZThreadImpl.AddArg(const AName: String; const AArg: Variant;
