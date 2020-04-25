@@ -457,6 +457,7 @@ type
         FThread: TInternalThread;
         FStopRequest: Boolean;
         FKilled: Boolean;
+        FLockedEvent : Boolean;
       protected
         procedure Execute; override;
         procedure DoOnDone(AThread:IEZThread);
@@ -466,6 +467,7 @@ type
         property CheckStop : TCheckStopRequest read FCheckStop write FCheckStop;
         property InternalThread : TInternalThread read FThread write FThread;
         property ID : String read FID write FID;
+        property InLockedEvent : Boolean read FLockedEvent;
         property List : TMonitorList read FList write FList;
         destructor Destroy; override;
       end;
@@ -516,6 +518,7 @@ type
     function IndexOfArg(Const AName:String):Integer;
     procedure UpdateState(AThread:IEZThread);
     function GetMonitorStop : Boolean;
+    function InLockedEvent : Boolean;
   strict protected
     function GetArgs : PEZArgs;
 
@@ -793,6 +796,7 @@ var
     Critical.Enter;
     try
      {$IFDEF EZTHREAD_TRACE}WriteLn('RemoveID::', Self.ClassName, '[id]:', LThread.Settings.Await.ThreadID, ' [collectionId]:', AID);{$ENDIF}
+       FLockedEvent := True;
 
       //raise stop event safely as long as it wasn't killed forcefully
       //(in this case it will have already been called)
@@ -812,6 +816,7 @@ var
       if AList.IndexOf(AID) < 0 then
         Exit;
 
+      FLockedEvent := False;
       AList.Remove(AID);
     finally
       Critical.Leave;
@@ -1163,7 +1168,10 @@ var
   I:Integer;
 begin
   Result:=-1;
-  Critical.Enter;
+
+  //don't aquire lock if we are being called my an event
+  if not InLockedEvent then
+    Critical.Enter;
   try
     for I:=0 to High(FArgs) do
       if FArgs[I].Name=AName then
@@ -1172,7 +1180,8 @@ begin
         Exit;
       end;
   finally
-    Critical.Leave;
+    if not InLockedEvent then
+      Critical.Leave;
   end;
 end;
 
@@ -1199,6 +1208,28 @@ end;
 function TEZThreadImpl.GetMonitorStop: Boolean;
 begin
   Result := FStopMonitor;
+end;
+
+function TEZThreadImpl.InLockedEvent: Boolean;
+var
+  I: Integer;
+  LMonitor: TMonitorThread;
+begin
+  Result := False;
+
+  //check if at least one monitor thread has aquired an event lock,
+  //if so then we need to return true to avoid deadlocks on the critical section
+  for I := 0 to Pred(FMonitorThreads.Count) do
+  begin
+    LMonitor := FMonitorThreads.Data[I];
+
+    //should not happen
+    if not Assigned(LMonitor) then
+      Continue;
+
+    if LMonitor.InLockedEvent then
+      Exit(True);
+  end;
 end;
 
 function TEZThreadImpl.GetArgs: PEZArgs;
@@ -1465,7 +1496,7 @@ begin
   LMonThread:=TMonitorThread.Create(True);
   LMonThread.FreeOnTerminate:=True;//memory freed automatically
   LMonThread.ID:=TGuid.NewGuid.ToString();
-  FMonitorThreads.Add(LMonThread.ID);
+  FMonitorThreads.Add(LMonThread.ID, LMonThread);
   LMonThread.List:=FMonitorThreads;
   LMonThread.InternalThread:=LIntThread;
   LMonThread.OnDone:=UpdateState;

@@ -40,8 +40,8 @@ var
 
   procedure WaitSomeTime(Const AThread:IEZThread);
   begin
-    //sleep 10 seconds before updating the text
-    Sleep(10000);
+    //sleep 1 seconds before updating the text
+    Sleep(1000);
   end;
 
 begin

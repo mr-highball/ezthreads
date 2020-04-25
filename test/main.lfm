@@ -1,36 +1,38 @@
 object MainForm: TMainForm
   Left = 428
-  Height = 462
+  Height = 308
   Top = 170
-  Width = 620
+  Width = 413
   Caption = 'ezthreads ui tester'
-  ClientHeight = 462
-  ClientWidth = 620
-  DesignTimePPI = 144
-  LCLVersion = '1.8.2.0'
+  ClientHeight = 308
+  ClientWidth = 413
+  LCLVersion = '2.1.0.0'
   object pctrl_main: TPageControl
-    Left = 5
-    Height = 452
-    Top = 5
-    Width = 610
+    Left = 3
+    Height = 302
+    Top = 3
+    Width = 407
     ActivePage = ts_edit
     Align = alClient
-    BorderSpacing.Around = 5
+    BorderSpacing.Around = 3
+    ParentFont = False
     TabIndex = 0
     TabOrder = 0
     object ts_edit: TTabSheet
       Caption = 'Edit'
-      ClientHeight = 414
-      ClientWidth = 602
+      ClientHeight = 274
+      ClientWidth = 399
+      ParentFont = False
       object edit_test: TEdit
         AnchorSideLeft.Control = ts_edit
         AnchorSideLeft.Side = asrCenter
         AnchorSideTop.Control = ts_edit
         AnchorSideTop.Side = asrCenter
-        Left = 201
-        Height = 33
-        Top = 191
-        Width = 200
+        Left = 133
+        Height = 23
+        Top = 126
+        Width = 133
+        ParentFont = False
         TabOrder = 0
         Text = 'edit_test'
       end
@@ -39,15 +41,16 @@ object MainForm: TMainForm
         AnchorSideRight.Side = asrBottom
         AnchorSideBottom.Control = ts_edit
         AnchorSideBottom.Side = asrBottom
-        Left = 484
-        Height = 38
-        Top = 371
-        Width = 113
+        Left = 321
+        Height = 25
+        Top = 246
+        Width = 75
         Anchors = [akRight, akBottom]
-        BorderSpacing.Right = 5
-        BorderSpacing.Bottom = 5
+        BorderSpacing.Right = 3
+        BorderSpacing.Bottom = 3
         Caption = 'Do It'
         OnClick = btn_edit_doitClick
+        ParentFont = False
         TabOrder = 1
       end
     end
