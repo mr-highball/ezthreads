@@ -175,13 +175,52 @@ begin
   WriteLn(Format('TestSharedArgs::[success]:%s', [BoolToStr(LJobOneFound and LJobTwoFound, True)]));
 end;
 
+(*
+  tests if a pool is freed after work has finished
+*)
+procedure TestFree;
+var
+  LPool : IEZThreadPool;
+  LJobOneFinished : Boolean;
+  LRef: LongInt;
 
+  //simple parallel job
+  procedure JobOne(const AThread : IEZThread);
+  begin
+    //do some work
+    Sleep(100);
+    LJobOneFinished := True;
+  end;
 
 begin
-  TestStartStop;
-  TestSingleTask;
-  TestTwoTasks;
-  TestSharedArgs;
+  //flags for checking if both jobs finished
+  LJobOneFinished := False;
+
+  //init a pool with one worker
+  LPool := NewEZThreadPool(1);
+
+  //work a single job
+  LPool
+    .Queue(JobOne, nil, nil)
+    .Start; //start the pool
+
+  //wait until the job finishes (await in this case will call APool.Stop)
+  Await(LPool);
+
+  //now manually decrement the reference count since this simulates going
+  //out of scope (we should have free the pool and the worker at this point)
+  LRef := LPool._Release;
+
+  //write status
+  WriteLn(Format('TestFree::[success]:%s', [BoolToStr(LRef <= 0, True)]));
+end;
+
+begin
+  //TestStartStop;
+  //TestSingleTask;
+  //TestTwoTasks;
+  //TestSharedArgs;
+  TestFree;
 
   //wait for user input
   ReadLn;
