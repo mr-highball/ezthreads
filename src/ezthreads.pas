@@ -25,7 +25,7 @@ unit ezthreads;
 
 {$mode delphi}{$H+}
 {$modeswitch nestedprocvars}
-{$define EZTHREAD_TRACE}
+{.$define EZTHREAD_TRACE}
 
 interface
 
@@ -1585,10 +1585,14 @@ begin
 end;
 
 procedure TEZThreadImpl.Stop;
+var
+  LThread : IEZThread;
 begin
   {$IFDEF EZTHREAD_TRACE}WriteLn('Stop::', Self.Classname, '[id]:', FThreadID);{$ENDIF}
+  LThread := GetThread;
+
   //allow children to handle before stopping
-  DoBeforeStop(GetThread);
+  DoBeforeStop(LThread);
 
   //signal to remaining threads to stop
   FStopMonitor := True;
@@ -1599,7 +1603,7 @@ begin
     Continue;
 
   //allow children to handle after stopping
-  DoAfterStop(GetThread);
+  DoAfterStop(LThread);
   {$IFDEF EZTHREAD_TRACE}WriteLn('Stop::Finished::', Self.Classname, '[id]:', FThreadID);{$ENDIF}
 end;
 

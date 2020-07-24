@@ -365,12 +365,11 @@ begin
     //to finish
     LStillWorking := False;
 
-    while LStillWorking do
-    begin
+    repeat
       for I := 0 to High(FPool.FWorking) do
         if FPool.FWorking[I] then
           LStillWorking := True;
-    end;
+    until not LStillWorking;
 
     {$IFDEF EZTHREAD_TRACE}WriteLn('PoolExecute::', Self.ClassName, ' finished');{$ENDIF}
   except on E : Exception do
@@ -491,10 +490,26 @@ begin
 end;
 
 procedure TEZThreadPoolImpl.DoAfterStop(const AThread: IEZThread);
+var
+  I: Integer;
+  LStillWorking: Boolean;
+  LWorker: IEZThread;
 begin
   inherited DoAfterStop(AThread);
 
-  //clear ref to parent pool
+  if not Assigned(FWorkers) then
+    Exit;
+
+  //don't clear the workers until they're finished
+  for I := 0 to Pred(FWorkers.Count) do
+  begin
+    LWorker := FWorkers[I];
+
+    while LWorker.State = esStarted do
+      Continue;
+  end;
+
+  //clear workers
   FWorkers.Clear;
 end;
 
@@ -696,10 +711,12 @@ destructor TEZThreadPoolImpl.Destroy;
 begin
  {$IFDEF EZTHREAD_TRACE}WriteLn('PoolDestroy::', Self.ClassName);{$ENDIF}
   Stop;
-  FWork.Free;
-  FCritical.Free;
+  FreeAndNil(FWork);
+  FreeAndNil(FCritical);
+  FreeAndNil(FWorkers);
+  FreeAndNil(FPlaceHolders);
+  {$IFDEF EZTHREAD_TRACE}WriteLn('PoolDead::', Self.ClassName);{$ENDIF}
   inherited Destroy;
- {$IFDEF EZTHREAD_TRACE}WriteLn('PoolDead::', Self.ClassName);{$ENDIF}
 end;
 
 end.
