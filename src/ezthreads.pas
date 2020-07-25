@@ -543,6 +543,11 @@ type
       method can be overidden to perform additional setup tasks for descendants
     *)
     procedure DoSetupInternalThread(const AThread : TInternalThread); virtual;
+    procedure DoBeforeStart(const AThread : IEZThread); virtual;
+    procedure DoAfterStart(const AThread : IEZThread); virtual;
+    procedure DoBeforeStop(const AThread : IEZThread); virtual;
+    procedure DoAfterStop(const AThread : IEZThread); virtual;
+
     class procedure AddThreadToAwaitCollection(const AThread : IEZThread); static;
     class procedure RemoveThreadFromAwaitCollection(const AThread : IEZThread); static;
   public
@@ -1273,6 +1278,26 @@ begin
   //nothing in base
 end;
 
+procedure TEZThreadImpl.DoBeforeStart(const AThread: IEZThread);
+begin
+  //nothing in base
+end;
+
+procedure TEZThreadImpl.DoAfterStart(const AThread: IEZThread);
+begin
+  //nothing in base
+end;
+
+procedure TEZThreadImpl.DoBeforeStop(const AThread: IEZThread);
+begin
+  //nothing in base
+end;
+
+procedure TEZThreadImpl.DoAfterStop(const AThread: IEZThread);
+begin
+  //nothing in base
+end;
+
 class procedure TEZThreadImpl.AddThreadToAwaitCollection(
   const AThread: IEZThread);
 begin
@@ -1496,6 +1521,9 @@ var
   LThread:IEZThread;
 begin
   {$IFDEF EZTHREAD_TRACE}WriteLn('Start::', Self.Classname, '[id]:', FThreadID);{$ENDIF}
+  //allow children to handle before starting
+  DoBeforeStart(GetThread);
+
   //raise on start events
   if Assigned(FOnStart) then
     FOnStart(GetThread);
@@ -1551,11 +1579,21 @@ begin
   finally
     Critical.Leave;
   end;
+
+  //allow children to handle after starting
+  DoAfterStart(GetThread);
 end;
 
 procedure TEZThreadImpl.Stop;
+var
+  LThread : IEZThread;
 begin
   {$IFDEF EZTHREAD_TRACE}WriteLn('Stop::', Self.Classname, '[id]:', FThreadID);{$ENDIF}
+  LThread := GetThread;
+
+  //allow children to handle before stopping
+  DoBeforeStop(LThread);
+
   //signal to remaining threads to stop
   FStopMonitor := True;
 
@@ -1563,6 +1601,9 @@ begin
   //so wait until this has been done
   while FMonitorThreads.Count > 0 do
     Continue;
+
+  //allow children to handle after stopping
+  DoAfterStop(LThread);
   {$IFDEF EZTHREAD_TRACE}WriteLn('Stop::Finished::', Self.Classname, '[id]:', FThreadID);{$ENDIF}
 end;
 

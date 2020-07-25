@@ -160,6 +160,7 @@ type
   strict private
     FWorking : TArray<Boolean>;
     FWorkers : TEZThreads;
+    FWorkerCount : Integer;
     FWorkerGroup : String;
     FWork : TMethodQueue;
     FCritical : TCriticalSection;
@@ -201,6 +202,17 @@ type
       return our worker thread
     *)
     function DoGetThreadClass: TInternalThreadClass; override;
+
+    (*
+      handles setting up workers
+    *)
+    procedure DoBeforeStart(const AThread: IEZThread); override;
+
+    (*
+      will clear workers to avoid cyclic dependencies
+    *)
+    procedure DoAfterStop(const AThread: IEZThread); override;
+
     procedure DoSetupInternalThread(const AThread: TInternalThread); override;
   public
     property WorkerGroupID : String read GetWorkerGroup;
@@ -353,12 +365,11 @@ begin
     //to finish
     LStillWorking := False;
 
-    while LStillWorking do
-    begin
+    repeat
       for I := 0 to High(FPool.FWorking) do
         if FPool.FWorking[I] then
           LStillWorking := True;
-    end;
+    until not LStillWorking;
 
     {$IFDEF EZTHREAD_TRACE}WriteLn('PoolExecute::', Self.ClassName, ' finished');{$ENDIF}
   except on E : Exception do
@@ -466,6 +477,40 @@ end;
 function TEZThreadPoolImpl.DoGetThreadClass: TInternalThreadClass;
 begin
   Result := TPoolWorkerThread;
+end;
+
+procedure TEZThreadPoolImpl.DoBeforeStart(const AThread: IEZThread);
+begin
+  inherited DoBeforeStart(AThread);
+
+  //if a pool was stopped and didn't get released, this will ensure
+  //the proper worker count gets updated before starting the pool
+  if FWorkerCount <> FWorkers.Count then
+    UpdateWorkerCount(FWorkerCount);
+end;
+
+procedure TEZThreadPoolImpl.DoAfterStop(const AThread: IEZThread);
+var
+  I: Integer;
+  LStillWorking: Boolean;
+  LWorker: IEZThread;
+begin
+  inherited DoAfterStop(AThread);
+
+  if not Assigned(FWorkers) then
+    Exit;
+
+  //don't clear the workers until they're finished
+  for I := 0 to Pred(FWorkers.Count) do
+  begin
+    LWorker := FWorkers[I];
+
+    while LWorker.State = esStarted do
+      Continue;
+  end;
+
+  //clear workers
+  FWorkers.Clear;
 end;
 
 procedure TEZThreadPoolImpl.DoSetupInternalThread(const AThread: TInternalThread);
@@ -598,11 +643,11 @@ const
 
 begin
   Result := Self;
-  LCount := AWorkers;
+  FWorkerCount := AWorkers;
 
   //can't have zero workers... I mean you could, that would just be stupid though
-  if LCount < 1 then
-    LCount := 1;
+  if FWorkerCount < 1 then
+    FWorkerCount := 1;
 
   //await current jobs
   ezthreads.Await(FWorkerGroup);
@@ -615,17 +660,17 @@ begin
     Stop;
 
   //set the working array to the worker count and fill as false
-  SetLength(FWorking, LCount);
+  SetLength(FWorking, FWorkerCount);
 
   //these should be defaulted to false, but just to make sure
-  for I := 0 to Pred(LCount) do
+  for I := 0 to Pred(FWorkerCount) do
     FWorking[I] := False;
 
   //clear workers
   FWorkers.Clear;
 
   //populate workers
-  for I := 0 to Pred(LCount) do
+  for I := 0 to Pred(FWorkerCount) do
   begin
     //add a new thread, making sure to copy the pool's settings that apply
     LThread := NewEZThread;
@@ -666,10 +711,12 @@ destructor TEZThreadPoolImpl.Destroy;
 begin
  {$IFDEF EZTHREAD_TRACE}WriteLn('PoolDestroy::', Self.ClassName);{$ENDIF}
   Stop;
-  FWork.Free;
-  FCritical.Free;
+  FreeAndNil(FWork);
+  FreeAndNil(FCritical);
+  FreeAndNil(FWorkers);
+  FreeAndNil(FPlaceHolders);
+  {$IFDEF EZTHREAD_TRACE}WriteLn('PoolDead::', Self.ClassName);{$ENDIF}
   inherited Destroy;
- {$IFDEF EZTHREAD_TRACE}WriteLn('PoolDead::', Self.ClassName);{$ENDIF}
 end;
 
 end.
