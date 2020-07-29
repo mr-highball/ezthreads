@@ -292,9 +292,13 @@ var
   LStillWorking: Boolean;
   I: Integer;
   LArgs: PEZArgs;
+  LPool: IEZThreadPool;
 begin
   try
-   {$IFDEF EZTHREAD_TRACE}WriteLn('PoolExecute::', Self.ClassName);{$ENDIF}
+    {$IFDEF EZTHREAD_TRACE}WriteLn('PoolExecute::', Self.ClassName);{$ENDIF}
+    //capture a reference to ensure the lifetime of this method
+    LPool := FPool as IEZThreadPool;
+
     //run the start methods
     if Assigned(StartCallback) then
       StartCallback(Thread);
@@ -304,6 +308,9 @@ begin
 
     if Assigned(StartMethod) then
       StartMethod(Thread);
+
+    if not Assigned(LPool) then
+      Exit;
 
     //as long as a stop hasn't been requested continue to poll for work
     while not Terminated do
@@ -337,7 +344,7 @@ begin
         //get a worker (this blocks until one frees up)
         LWorker := FPool.GetFreeWorker;
 
-       {$IFDEF EZTHREAD_TRACE}WriteLn('PoolExecute::', Self.ClassName, ' found worker ', LWorker.Settings.Await.ThreadID);{$ENDIF}
+        {$IFDEF EZTHREAD_TRACE}WriteLn('PoolExecute::', Self.ClassName, ' found worker ', LWorker.Settings.Await.ThreadID);{$ENDIF}
 
         //setup and start the work
         LWorker
