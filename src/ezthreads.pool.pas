@@ -716,7 +716,7 @@ end;
 
 destructor TEZThreadPoolImpl.Destroy;
 begin
- {$IFDEF EZTHREAD_TRACE}WriteLn('PoolDestroy::', Self.ClassName);{$ENDIF}
+  {$IFDEF EZTHREAD_TRACE}WriteLn('PoolDestroy::', Self.ClassName);{$ENDIF}
   Stop;
   FreeAndNil(FWork);
   FreeAndNil(FCritical);
