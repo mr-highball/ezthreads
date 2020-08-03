@@ -222,6 +222,45 @@ begin
   WriteLn(Format('TestFree::[success]:%s', [BoolToStr(LRef <= 2, True)]));
 end;
 
+(*
+  test demonstrating how to use a thread pool with the
+  'ForceTerminate' setting to kill worker threads immediately
+*)
+procedure TestForceStop;
+var
+  LPool : IEZThreadPool;
+
+  procedure Start(const AThread : IEZThread);
+  var
+    LPoolRef : IEZThreadPool;
+  begin
+    //since we expect the pool to go out of scope of the outer method first
+    //we capture a reference to avoid a/v's
+    LPoolRef := LPool;
+
+    //this should not finish
+    sleep(500);
+
+    LPoolRef.AddArg('failed', 'test should not reach this point');
+  end;
+
+begin
+  LPool := NewEZThreadPool(1);
+
+  LPool
+    .Queue(Start, nil, nil)
+    .Settings
+      .UpdateForceTerminate(True)
+      .Thread
+    .Start;
+
+  //instead of calling await, call 'stop' explicitly since the behavior of
+  //await is to 'await' all workers finishing first, then calling stop
+  LPool.Stop;
+
+  WriteLn(Format('TestForceStop::[success]:%s', [BoolToStr(not LPool.Exists['failed'], True)]));
+end;
+
 begin
   {$IF DECLARED(GlobalSkipIfNoLeaks)}
   GlobalSkipIfNoLeaks := True;
@@ -232,6 +271,7 @@ begin
   TestTwoTasks;
   TestSharedArgs;
   TestFree;
+  TestForceStop;
 
   //wait for user input
   ReadLn;

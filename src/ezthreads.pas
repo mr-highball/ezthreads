@@ -843,6 +843,40 @@ var
     end;
   end;
 
+  (*
+    checks for force killing, and handles it
+  *)
+  function CheckForceKill : Boolean;
+  begin
+    LForceKill := FThread.EZThread.Settings.ForceTerminate;
+    Result := LForceKill;
+
+    //if settings say we should forcefull terminate, do so but
+    //be warned, this may cause problems...
+    if LForceKill then
+    begin
+      //if we get here, then the thread has passed the alotted max, so forcefull
+      //terminate it
+      if not FThread.Finished then
+        FThread.Terminate;
+
+      //here we check one last time for finished to make sure to avoid a kill if possible
+      if (not FThread.Finished)
+        and (LForceKill)
+      then
+      begin
+        //since we are killing, caller will still expect
+        //for their events to occur
+        FThread.RaiseStopEvents;
+
+        //kill it dead
+        KillThread(FThread.Handle);
+        FKilled:=True;
+        Exit;
+      end;
+    end;
+  end;
+
 begin
   try
    {$IFDEF EZTHREAD_TRACE}WriteLn('Monitor::', 'start [id]:', FThread.EZThread.Settings.Await.ThreadID);{$ENDIF}
@@ -850,7 +884,6 @@ begin
     FKilled := False;
     LElapsed:=0;
     LMax := FThread.EZThread.Settings.MaxRuntime;
-    LForceKill := FThread.EZThread.Settings.ForceTerminate;
 
     //if we're finished, nothing to do
     if FThread.Finished or FStopRequest then
@@ -880,30 +913,7 @@ begin
           Break;
       end;
 
-      //if settings say we should forcefull terminate, do so but
-      //be warned, this may cause problems...
-      if LForceKill then
-      begin
-        //if we get here, then the thread has passed the alotted max, so forcefull
-        //terminate it
-        if not FThread.Finished then
-          FThread.Terminate;
-
-        //here we check one last time for finished to make sure to avoid a kill if possible
-        if (not FThread.Finished)
-          and (LForceKill)
-        then
-        begin
-          //since we are killing, caller will still expect
-          //for their events to occur
-          FThread.RaiseStopEvents;
-
-          //kill it dead
-          KillThread(FThread.Handle);
-          FKilled:=True;
-          Exit;
-        end;
-      end;
+      CheckForceKill;
     end;
 
     //wait until the thread is finished
@@ -914,7 +924,10 @@ begin
 
       //terminate the thread and wait for it to respond
       if FStopRequest then
-        FThread.Terminate;
+        if CheckForceKill then
+          Exit
+        else
+          FThread.Terminate;
 
       //sleep smallest granularity
       Sleep(1);
