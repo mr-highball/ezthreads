@@ -346,6 +346,9 @@ begin
             .UpdateOnStartNestedCallback(FPool.Events.OnStartNestedCallback)
             .UpdateOnStartCallback(FPool.Events.OnStartCallback)
             .Thread
+          .Settings
+            .UpdateForceTerminate(FPool.Settings.ForceTerminate)
+            .Thread
           .Setup(LWork.Callback.Start, LWork.Callback.Error, LWork.Callback.Success)
           .Setup(LWork.Nested.Start, LWork.Nested.Error, LWork.Nested.Success)
           .Setup(LWork.Method.Start, LWork.Method.Error, LWork.Method.Success);
@@ -492,7 +495,6 @@ end;
 procedure TEZThreadPoolImpl.DoAfterStop(const AThread: IEZThread);
 var
   I: Integer;
-  LStillWorking: Boolean;
   LWorker: IEZThread;
 begin
   inherited DoAfterStop(AThread);
@@ -504,6 +506,7 @@ begin
   for I := 0 to Pred(FWorkers.Count) do
   begin
     LWorker := FWorkers[I];
+    LWorker.Stop;
 
     while LWorker.State = esStarted do
       Continue;
