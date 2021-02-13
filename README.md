@@ -1,7 +1,9 @@
 # ezthreads
 a simple and safe way to work with threads
 
-To request features or report a bug, open a github issue with details/steps to reproduce
+To request features or report a bug, open a github issue with details/steps to reproduce.
+
+General questions can be asked in [Discussions](https://github.com/mr-highball/ezthreads/discussions)
 
 # Features
 
