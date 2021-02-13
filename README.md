@@ -43,7 +43,7 @@ var
   var
     LID:String;
   begin
-    LID:=AThread['id'];
+    LID := AThread['id'];
 
     //write that we got to thread (B)
     WriteLn('TestThreadDependency::ThreadB starting');
@@ -57,8 +57,8 @@ var
 
 begin
   //init both threads
-  LThreadA:=TEZThreadImpl.Create;
-  LThreadB:=TEZThreadImpl.Create;
+  LThreadA := NewEZThread;
+  LThreadB := NewEZThread;
 
   //setup thread (A)
   LThreadA
@@ -127,6 +127,45 @@ begin
   WriteLn(Format('TestTwoTasks::[success]:%s', [BoolToStr(LJobOneFinished and LJobTwoFinished, True)]));
 end;
 ```
+
+Even a simple way to synchronize events with the main thread. This is pulled from `.\test\ezthreads_tester_ui.lpr`
+
+```pascal
+procedure TMainForm.btn_edit_doitClick(Sender: TObject);
+var
+  LThread:IEZThread;
+
+  procedure WaitSomeTime(Const AThread:IEZThread);
+  begin
+    //sleep 1 seconds before updating the text
+    Sleep(1000);
+  end;
+
+begin
+  if not btn_edit_doit.Enabled then
+    Exit;
+
+  //update the edit control with some different text
+  LThread := NewEZThread;
+
+  //configure the thread and start it
+  LThread
+    .Settings
+      .UpdateSynchronizeStopEvents(True) //this will "automatically" sync events
+      .Thread
+    .Events
+      .UpdateOnStop(UpdateEditInMainThread) //pass in the event to update out edit
+      .Thread
+    .AddArg('text','a message from a thread')
+    .Setup(WaitSomeTime)
+    .Start;
+
+  //disable control so user cannot click it a lot
+  btn_edit_doit.Enabled:=False;
+end;  
+```
+
+![](https://github.com/mr-highball/ezthreads/blob/master/screenshots/synchronize_ui.gif)
 
 # How To Use
 

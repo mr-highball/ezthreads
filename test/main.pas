@@ -47,16 +47,17 @@ var
 begin
   if not btn_edit_doit.Enabled then
     Exit;
+
   //update the edit control with some different text
-  LThread:=TEZThreadImpl.Create;
+  LThread := NewEZThread;
 
   //configure the thread and start it
   LThread
     .Settings
-      .UpdateSynchronizeStopEvents(True)
+      .UpdateSynchronizeStopEvents(True) //this will "automatically" sync events
       .Thread
     .Events
-      .UpdateOnStop(UpdateEditInMainThread)
+      .UpdateOnStop(UpdateEditInMainThread) //pass in the event to update out edit
       .Thread
     .AddArg('text','a message from a thread')
     .Setup(WaitSomeTime)
@@ -74,9 +75,9 @@ begin
     raise Exception.Create('needs to be in main thread');
 
   //set this for debugging, but optional variable, could just assign from thread
-  LMsg:=AThread['text'];
-  edit_test.Text:=LMsg;
-  btn_edit_doit.Enabled:=True;
+  LMsg := AThread['text'];
+  edit_test.Text := LMsg;
+  btn_edit_doit.Enabled := True;
 end;
 
 end.
