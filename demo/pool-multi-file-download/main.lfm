@@ -1,0 +1,98 @@
+object MultiFileDownload: TMultiFileDownload
+  Left = 606
+  Height = 294
+  Top = 259
+  Width = 399
+  Caption = 'MultiFileDownload'
+  ClientHeight = 294
+  ClientWidth = 399
+  Position = poScreenCenter
+  LCLVersion = '2.1.0.0'
+  object memo_filelist: TMemo
+    Left = 196
+    Height = 184
+    Top = 5
+    Width = 198
+    Align = alRight
+    BorderSpacing.Around = 5
+    ScrollBars = ssAutoBoth
+    TabOrder = 0
+    WordWrap = False
+  end
+  object pnl_ctrls: TPanel
+    Left = 0
+    Height = 75
+    Top = 219
+    Width = 399
+    Align = alBottom
+    ClientHeight = 75
+    ClientWidth = 399
+    TabOrder = 1
+    object btn_clear: TButton
+      AnchorSideTop.Control = btn_download
+      AnchorSideRight.Control = btn_download
+      Left = 188
+      Height = 25
+      Top = 25
+      Width = 100
+      Anchors = [akTop, akRight]
+      BorderSpacing.Right = 5
+      Caption = 'Clear'
+      OnClick = btn_clearClick
+      TabOrder = 0
+    end
+    object btn_download: TButton
+      AnchorSideTop.Control = pnl_ctrls
+      AnchorSideTop.Side = asrCenter
+      AnchorSideRight.Control = pnl_ctrls
+      AnchorSideRight.Side = asrBottom
+      Left = 293
+      Height = 25
+      Top = 25
+      Width = 100
+      Anchors = [akTop, akRight]
+      BorderSpacing.Right = 5
+      Caption = 'Download'
+      OnClick = btn_downloadClick
+      TabOrder = 1
+    end
+    object edit_workers: TLabeledEdit
+      AnchorSideLeft.Control = pnl_ctrls
+      AnchorSideTop.Control = btn_download
+      AnchorSideTop.Side = asrCenter
+      Left = 6
+      Height = 23
+      Top = 26
+      Width = 80
+      BorderSpacing.Around = 5
+      EditLabel.Height = 15
+      EditLabel.Width = 80
+      EditLabel.Caption = 'Thread Count'
+      EditLabel.ParentColor = False
+      EditLabel.ParentFont = False
+      EditLabel.Font.Style = [fsBold]
+      TabOrder = 2
+      Text = '2'
+    end
+  end
+  object progress: TProgressBar
+    Left = 5
+    Height = 20
+    Top = 194
+    Width = 389
+    Align = alBottom
+    BorderSpacing.Around = 5
+    TabOrder = 2
+  end
+  object lbl_instructions: TLabel
+    Left = 5
+    Height = 184
+    Top = 5
+    Width = 186
+    Align = alClient
+    BorderSpacing.Around = 5
+    Caption = 'Instructions:'#13#10'--------------'#13#10#13#10'1.) paste URL(s) in the text box to the right'#13#10'2.) press the download button'#13#10'     - at this point all files will be requested with the http.Head() '#13#10'     - progress bar will be the total of bytes from file'#13#10'3.) watch as the thread pool downloads all files async'
+    ParentColor = False
+    WordWrap = True
+  end
+end
