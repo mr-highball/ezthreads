@@ -184,6 +184,7 @@ var
   LPool: IEZThreadPool;
   I, LFileCount: Integer;
   LInitThread: IEZThread;
+  LFinished: Boolean;
 
   procedure DownloadFile(const AThread : IEZThread);
   var
@@ -212,6 +213,9 @@ var
     finally
       LClient.Free;
       LStream.Free;
+
+      if I <= 0 then
+        LFinished := True;
     end;
   end;
 
@@ -241,6 +245,9 @@ begin
 
   //we'll setup a single counter to act like a "queue"
   LFileCount := memo_filelist.Lines.Count;
+
+  //simple bool flag to say when we're "done"
+  LFinished := LFileCount < 1;
 
   //use an array of TBytes to hold the contents
   SetLength(FFiles, LFileCount);
@@ -273,7 +280,7 @@ begin
     zero, then we're done. another way could be to setup another "watcher" ezthread
     which just calls Await(FPool) but would require to set the pool to a private var first
   *)
-  while LFileCount > 0 do
+  while not LFinished do
   begin
     Application.ProcessMessages;
     Sleep(50);
