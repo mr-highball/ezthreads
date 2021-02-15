@@ -70,6 +70,7 @@ type
     function GetTotalBytes(const ATotalVarName : String) : IEZThread;
     procedure DisableUI;
     procedure EnableUI;
+    procedure UpdateProgressBar;
   public
     property Files : TStrings read GetFiles;
     property FileData : TFileArray read FFiles;
@@ -101,8 +102,23 @@ end;
 
 procedure TMultiFileDownload.DataReceived(Sender: TObject; const ContentLength,
   CurrentPos: Int64);
+var
+  LTotal, I: Integer;
 begin
-  //todo
+  //because we have lots of files downloading in parallel we need some way
+  //to determine the remaining amount of data left so we'll sum up all of our
+  //byte lengths with a "dirty" read
+  LTotal := 0;
+  for I := 0 to High(FFiles) do
+    Inc(LTotal, Length(FFiles[I]));
+
+  //now see if our total is greater than the remaining value (in case some other
+  //thread already finished)
+  if LTotal > FCurrentProgress then
+    InterlockedExchange(FCurrentProgress, LTotal);
+
+  //now throw a task on the UI queue to update the progress bar
+  TThread.Queue(nil, UpdateProgressBar);
 end;
 
 function TMultiFileDownload.GetFiles: TStrings;
@@ -170,6 +186,11 @@ begin
   btn_download.Enabled := True;
   btn_clear.Enabled := True;
   memo_filelist.Enabled := True;
+end;
+
+procedure TMultiFileDownload.UpdateProgressBar;
+begin
+  progress.Position := FCurrentProgress;
 end;
 
 procedure TMultiFileDownload.Clear;
@@ -268,7 +289,8 @@ begin
   end;
 
   progress.Position := 0;
-  progress.Max := LInitThread['total'];
+  FCurrentProgress := LInitThread['total'];
+  progress.Max := FCurrentProgress;
 
   //start
   LPool.Start;

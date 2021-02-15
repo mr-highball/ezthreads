@@ -164,6 +164,7 @@ type
     FWorkerGroup : String;
     FWork : TMethodQueue;
     FCritical : TCriticalSection;
+    FWorkerCritical : TCriticalSection;
     FPlaceHolders : TEZThreads;
 
     procedure AddPlaceHolder;
@@ -461,7 +462,7 @@ begin
       begin
         //now that we found one, aquire a lock to ensure another thread hasn't '
         //picked this worker up
-        FCritical.Enter;
+        FWorkerCritical.Enter;
         try
           if FWorking[I] then
             Continue;
@@ -470,7 +471,7 @@ begin
           FWorking[I] := True;
           Result := FWorkers[I];
         finally
-          FCritical.Leave;
+          FWorkerCritical.Leave;
         end;
 
         //add the worker to the group for await support
@@ -641,14 +642,9 @@ const
     //self pointer won't work here, so cast the pool arg
     LSelf := TEZThreadPoolImpl(Pointer(PtrInt(LThread[POOL])));
 
-   {$IFDEF EZTHREAD_TRACE}WriteLn('WorkerStop::', LSelf.ClassName, '[id]:', LThread.Settings.Await.ThreadID);{$ENDIF}
-    LSelf.FCritical.Enter;
-    try
-      I := LThread[INTERNAL_INDEX];
-      LSelf.FWorking[I] := False;
-    finally
-      LSelf.FCritical.Leave;
-    end;
+    {$IFDEF EZTHREAD_TRACE}WriteLn('WorkerStop::', LSelf.ClassName, '[id]:', LThread.Settings.Await.ThreadID);{$ENDIF}
+    I := LThread[INTERNAL_INDEX];
+    LSelf.FWorking[I] := False;
   end;
 
 begin
@@ -712,6 +708,7 @@ begin
   FPlaceHolders := TEZThreads.Create;
   FWork := TMethodQueue.Create;
   FCritical := TCriticalSection.Create;
+  FWorkerCritical := TCriticalSection.Create;
   FWorkers := TEZThreads.Create;
   FWorkerGroup := TGuid.NewGuid.ToString;
   AddArg(ARGS, PtrInt(GetArgs));
@@ -723,6 +720,7 @@ begin
   Stop;
   FreeAndNil(FWork);
   FreeAndNil(FCritical);
+  FreeAndNil(FWorkerCritical);
   FreeAndNil(FWorkers);
   FreeAndNil(FPlaceHolders);
   {$IFDEF EZTHREAD_TRACE}WriteLn('PoolDead::', Self.ClassName);{$ENDIF}
