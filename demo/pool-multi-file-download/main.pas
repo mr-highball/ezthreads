@@ -312,10 +312,10 @@ begin
 
   (*
     if we were to "await" the pool it would block the UI, so there's a few
-    ways we could handle this. a very simple one is below, use your file count var
-    to just call process messages since it is decremented by the threads, once it hits
-    zero, then we're done. another way could be to setup another "watcher" ezthread
-    which just calls Await(FPool) but would require to set the pool to a private var first
+    ways we could handle this. a very simple one is below, is to use a bool flag
+    that denotes we've "finished". the last thread (one that pulls the last file)
+    will mark that it's done once the download succeeds/fails and we'll just
+    process messages until it occurs
   *)
   while not LFinished do
   begin
