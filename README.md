@@ -167,7 +167,7 @@ begin
 end;  
 ```
 
-![](screenshots/synchronize_ui.gif)
+![](/screenshots/synchronize_ui.gif)
 
 # How To Use
 
