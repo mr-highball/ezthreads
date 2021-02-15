@@ -62,6 +62,8 @@ type
       TFileArray = array of TBytes;
   private
     FCurrentProgress: Integer;
+    FTotalBytes : Integer;
+    FIndividualProgress : TArray<Int64>;
     FFiles : TFileArray;
 
     procedure DataReceived(Sender: TObject; const ContentLength,
@@ -103,17 +105,19 @@ end;
 procedure TMultiFileDownload.DataReceived(Sender: TObject; const ContentLength,
   CurrentPos: Int64);
 var
-  LTotal, I: Integer;
+  LTotal : Int64;
+  I: Integer;
 begin
-  //because we have lots of files downloading in parallel we need some way
-  //to determine the remaining amount of data left so we'll sum up all of our
-  //byte lengths with a "dirty" read
+  //the index into our individual progress array is stored in the "tag" property
+  FIndividualProgress[TFPHTTPClient(Sender).Tag] := CurrentPos;
+
+  //sum up the all of the individual progress counts via a "dirty" read
   LTotal := 0;
   for I := 0 to High(FFiles) do
     Inc(LTotal, Length(FFiles[I]));
 
-  //now see if our total is greater than the remaining value (in case some other
-  //thread already finished)
+  //now see if our total is greater than the current progress we've stored
+  //if so update this via an interlocked exchange
   if LTotal > FCurrentProgress then
     InterlockedExchange(FCurrentProgress, LTotal);
 
@@ -126,8 +130,7 @@ begin
   Result := memo_filelist.Lines;
 end;
 
-function TMultiFileDownload.GetTotalBytes(const ATotalVarName: String
-  ): IEZThread;
+function TMultiFileDownload.GetTotalBytes(const ATotalVarName: String): IEZThread;
 
   procedure GetBytes(const AThread : IEZThread);
   var
@@ -225,9 +228,13 @@ var
     LClient := TFPHTTPClient.Create(nil);
     LStream := TMemoryStream.Create;
     try
-      LClient.OnDataReceived := DataReceived;
-      LURL := AThread[IntToStr(I)];
+      //setup the client and make a get for the file
+      LClient.OnDataReceived := DataReceived; //callback to handle the progress bar
+      LClient.Tag := I; //set the tag to the index we're working
+      LURL := AThread[IntToStr(I)]; //url stored by the index as the "argument name"
       LClient.Get(LURL, LStream);
+
+      //after the get re-position the stream and copy to our files array
       LStream.Position := 0;
       SetLength(FFiles[I], LStream.Size);
       LStream.ReadBuffer(FFIles[I], LStream.Size);
@@ -235,6 +242,7 @@ var
       LClient.Free;
       LStream.Free;
 
+      //last file, mark our flag as "finished"
       if I <= 0 then
         LFinished := True;
     end;
@@ -246,6 +254,10 @@ var
     //with them. for demo purposes we just make a note here and if a user wants
     //to access via code there is a FileData property
     //....
+
+    //not sure if the data received gets called up to the last byte, but
+    //if we make it here, then we're definitely done, so update progress bar to max
+    progress.Position := FTotalBytes;
 
     //re-enable the UI
     EnableUI;
@@ -288,9 +300,12 @@ begin
     Sleep(50);
   end;
 
-  progress.Position := 0;
-  FCurrentProgress := LInitThread['total'];
-  progress.Max := FCurrentProgress;
+  //reset everything for our progress bar
+  progress.Position := 0; //bar back to 0
+  FCurrentProgress := 0; //our var to hold the current total on the data received callback
+  FTotalBytes := LInitThread['total']; //total, matches the bar max
+  SetLength(FIndividualProgress, LFileCount); //for each http client store the current data received
+  progress.Max := FTotalBytes;
 
   //start
   LPool.Start;

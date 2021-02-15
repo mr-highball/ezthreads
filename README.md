@@ -167,7 +167,7 @@ begin
 end;  
 ```
 
-![](https://github.com/mr-highball/ezthreads/blob/master/screenshots/synchronize_ui.gif)
+![](screenshots/synchronize_ui.gif)
 
 # How To Use
 
