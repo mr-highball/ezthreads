@@ -271,6 +271,13 @@ type
     function Setup(Const AStart:TThreadMethod):IEZThread;overload;
 
     (*
+      queues a method to run in the UI's main thread
+    *)
+    function Synchronize(const AUIMethod : TThreadCallback) : IEZThread; overload;
+    function Synchronize(const AUIMethod : TThreadNestedCallback) : IEZThread; overload;
+    function Synchronize(const AUIMethod : TThreadMethod) : IEZThread; overload;
+
+    (*
       starts the thread
     *)
     procedure Start;
@@ -586,6 +593,7 @@ type
     function UpdateForceTerminate(Const AForce:Boolean):IEZThreadSettings;
     function UpdateSynchronizeStopEvents(Const ASynch:Boolean):IEZThreadSettings;
     function UpdateThreadName(const AName : String) : IEZThreadSettings;
+
     function AddArg(Const AName:String;Const AArg:Variant;
       Const AOnFinish:TArgCleanupMethod;
       Const AOnFinishCall:TArgCleanupCallback;
@@ -597,8 +605,10 @@ type
     function AddArg(Const AName:String;Const AArg:Variant;
       Const AOnFinish:TArgCleanupMethod):IEZThread;overload;
     function AddArg(Const AName:String;Const AArg:Variant):IEZThread;overload;
+
     function AddArgs(Const ANames:TStringArray;
       Const AArgs:TVariantArray):IEZThread;
+
     function Setup(Const AStart:TThreadCallback;
       Const AError:TThreadCallback;Const ASuccess:TThreadCallback):IEZThread;overload;
     function Setup(Const AStart:TThreadCallback):IEZThread;overload;
@@ -608,6 +618,11 @@ type
     function Setup(Const AStart:TThreadMethod;
       Const AError:TThreadMethod;Const ASuccess:TThreadMethod):IEZThread;overload;
     function Setup(Const AStart:TThreadMethod):IEZThread;overload;
+
+    function Synchronize(const AUIMethod : TThreadCallback) : IEZThread; overload;
+    function Synchronize(const AUIMethod : TThreadNestedCallback) : IEZThread; overload;
+    function Synchronize(const AUIMethod : TThreadMethod) : IEZThread; overload;
+
     function Group(Const AThread:IEZThread):IEZAwait;
     function UpdateGroupID(Const AGroupID:String):IEZAwait;
 
@@ -1509,6 +1524,110 @@ end;
 function TEZThreadImpl.Setup(const AStart: TThreadMethod): IEZThread;
 begin
   Result:=Setup(AStart,nil,nil);
+end;
+
+function TEZThreadImpl.Synchronize(const AUIMethod: TThreadCallback): IEZThread;
+var
+  LThread: IEZThread;
+
+  procedure Dummy(const AThread : IEZThread);
+  begin
+    {$IFDEF EZTHREAD_TRACE}WriteLn('Synchronize::Dummy::', Self.ClassName, '[id]:', AThread.Settings.Await.ThreadID);{$ENDIF}
+  end;
+
+  procedure Synched(const AThread : IEZThread);
+  type
+    PTThreadCallback = ^TThreadCallback;
+  var
+    LCallback: PTThreadCallback;
+    LCaller: IEZThread;
+  begin
+    LCaller := IEZThread(Pointer(PtrInt(AThread['thread'])));
+    try
+      {$IFDEF EZTHREAD_TRACE}WriteLn('Synchronize::Synched::', Self.ClassName, '[id]:', AThread.Settings.Await.ThreadID);{$ENDIF}
+      LCallback := PTThreadCallback(Pointer(PtrInt(AThread['callback'])));
+      LCallback^(LCaller);
+    finally
+      LCaller._Release;
+    end;
+  end;
+
+begin
+  Result := Self;
+
+  if not Assigned(AUIMethod) then
+    Exit;
+
+  //manually increment ref
+  Result._AddRef;
+
+  LThread := NewEZThread;
+  LThread
+    .Setup(Dummy) //empty method only used for tracing
+    .AddArg('callback', PtrInt(Pointer(@AUIMethod))) //capture the method to call
+    .AddArg('thread', PtrInt(Pointer(Result))) //add 'this' thread as a pointer
+    .Events
+      .UpdateOnStopNestedCallback(Synched)
+      .Thread
+    .Settings
+      .UpdateSynchronizeStopEvents(True) //handles synchronizing properly
+      .Thread
+    .Start;
+end;
+
+function TEZThreadImpl.Synchronize(const AUIMethod: TThreadNestedCallback
+  ): IEZThread;
+var
+  LThread: IEZThread;
+
+  procedure Dummy(const AThread : IEZThread);
+  begin
+    {$IFDEF EZTHREAD_TRACE}WriteLn('Synchronize::Dummy::', Self.ClassName, '[id]:', AThread.Settings.Await.ThreadID);{$ENDIF}
+  end;
+
+  procedure Synched(const AThread : IEZThread);
+  type
+    PTThreadNestedCallback = ^TThreadNestedCallback;
+  var
+    LCallback: TThreadNestedCallback;
+    LCaller: IEZThread;
+  begin
+    LCaller := IEZThread(Pointer(PtrInt(AThread['thread'])));
+    try
+      {$IFDEF EZTHREAD_TRACE}WriteLn('Synchronize::Synched::', Self.ClassName, '[id]:', AThread.Settings.Await.ThreadID);{$ENDIF}
+      LCallback := PTThreadNestedCallback(Pointer(PtrInt(AThread['nested'])))^;
+      LCallback(LCaller);
+    finally
+      LCaller._Release;
+    end;
+  end;
+
+begin
+  Result := Self;
+
+  if not Assigned(AUIMethod) then
+    Exit;
+
+  //manually increment ref
+  Result._AddRef;
+
+  LThread := NewEZThread;
+  LThread
+    .Setup(Dummy) //empty method only used for tracing
+    .AddArg('nested', PtrInt(Pointer(@@AUIMethod))) //capture the method to call
+    .AddArg('thread', PtrInt(Pointer(Result))) //add 'this' thread as a pointer
+    .Events
+      .UpdateOnStopNestedCallback(Synched)
+      .Thread
+    .Settings
+      .UpdateSynchronizeStopEvents(True) //handles synchronizing properly
+      .Thread
+    .Start;
+end;
+
+function TEZThreadImpl.Synchronize(const AUIMethod: TThreadMethod): IEZThread;
+begin
+
 end;
 
 function TEZThreadImpl.Group(const AThread: IEZThread): IEZAwait;

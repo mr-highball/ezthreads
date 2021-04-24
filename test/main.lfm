@@ -13,12 +13,47 @@ object MainForm: TMainForm
     Height = 604
     Top = 6
     Width = 814
-    ActivePage = ts_edit
+    ActivePage = ts_synch
     Align = alClient
     BorderSpacing.Around = 6
     ParentFont = False
     TabIndex = 0
     TabOrder = 0
+    object ts_synch: TTabSheet
+      Caption = 'Synchronize'
+      ClientHeight = 546
+      ClientWidth = 798
+      object edit_test_synch: TEdit
+        AnchorSideLeft.Control = ts_edit
+        AnchorSideLeft.Side = asrCenter
+        AnchorSideTop.Control = ts_edit
+        AnchorSideTop.Side = asrCenter
+        Left = 266
+        Height = 40
+        Top = 253
+        Width = 266
+        ParentFont = False
+        TabOrder = 0
+        Text = 'edit_test_synch'
+      end
+      object btn_edit_doit_synch: TButton
+        AnchorSideRight.Control = ts_edit
+        AnchorSideRight.Side = asrBottom
+        AnchorSideBottom.Control = ts_edit
+        AnchorSideBottom.Side = asrBottom
+        Left = 642
+        Height = 50
+        Top = 490
+        Width = 150
+        Anchors = [akRight, akBottom]
+        BorderSpacing.Right = 6
+        BorderSpacing.Bottom = 6
+        Caption = 'Do It'
+        OnClick = btn_edit_doit_synchClick
+        ParentFont = False
+        TabOrder = 1
+      end
+    end
     object ts_edit: TTabSheet
       Caption = 'Edit'
       ClientHeight = 546

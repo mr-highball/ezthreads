@@ -15,10 +15,14 @@ type
 
   TMainForm = class(TForm)
     btn_edit_doit: TButton;
+    btn_edit_doit_synch: TButton;
     edit_test: TEdit;
+    edit_test_synch: TEdit;
     pctrl_main: TPageControl;
+    ts_synch: TTabSheet;
     ts_edit: TTabSheet;
     procedure btn_edit_doitClick(Sender: TObject);
+    procedure btn_edit_doit_synchClick(Sender: TObject);
   private
     procedure UpdateEditInMainThread(Const AThread:IEZThread);
   public
@@ -65,6 +69,38 @@ begin
 
   //disable control so user cannot click it a lot
   btn_edit_doit.Enabled:=False;
+end;
+
+procedure TMainForm.btn_edit_doit_synchClick(Sender: TObject);
+var
+  LThread: IEZThread;
+
+  procedure Work(const AThread : IEZThread);
+
+    procedure UpdateUI(const AThread : IEZThread);
+    begin
+      edit_test_synch.Text := AThread['message'];
+    end;
+
+  begin
+    AThread.AddArg('message', 'message one');
+    AThread.Synchronize(UpdateUI);
+
+    //now wait some time before sending the next message
+    Sleep(3000);
+
+    AThread.AddArg('message', 'message two');
+    AThread.Synchronize(UpdateUI);
+  end;
+
+begin
+  if not btn_edit_doit_synch.Enabled then
+    Exit;
+
+  //this example starts a method that needs to update the UI from the other thread's
+  //context but still needs to "work" in the background (cannot use a single stop event)
+  LThread := NewEZThread;
+  LThread.Setup(Work).Start;
 end;
 
 procedure TMainForm.UpdateEditInMainThread(const AThread: IEZThread);
