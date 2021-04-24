@@ -30,7 +30,11 @@ unit ezthreads;
 interface
 
 uses
-  Classes, SysUtils, variants, fgl;
+  Classes,
+  SysUtils,
+  variants,
+  fgl,
+  syncobjs;
 
 type
 
@@ -533,6 +537,7 @@ type
     FGroupID,
     FName: String;
     FState: TEZState;
+    FCritical : TCriticalSection;
     function IndexOfArg(Const AName:String):Integer;
     procedure UpdateState(AThread:IEZThread);
     function GetMonitorStop : Boolean;
@@ -660,7 +665,6 @@ function NewEZThread : IEZThread;
 
 implementation
 uses
-  syncobjs,
   ezthreads.collection,
   ezthreads.pool;
 var
@@ -1229,7 +1233,7 @@ begin
 
   //don't aquire lock if we are being called my an event
   if not InLockedEvent then
-    Critical.Enter;
+    FCritical.Enter;
   try
     for I:=0 to High(FArgs) do
       if FArgs[I].Name=AName then
@@ -1239,7 +1243,7 @@ begin
       end;
   finally
     if not InLockedEvent then
-      Critical.Leave;
+      FCritical.Leave;
   end;
 end;
 
@@ -1247,7 +1251,7 @@ procedure TEZThreadImpl.UpdateState(AThread:IEZThread);
 begin
   //on done gets called before monitor thread removes itself from list,
   //so count of 1 actually means we'll be stopped
-  Critical.Enter;
+  FCritical.Enter;
   try
     if FMonitorThreads.Count <= 1 then
     begin
@@ -1259,7 +1263,7 @@ begin
       Collection.Remove(AThread);
     end;
   finally
-    Critical.Leave;
+    FCritical.Leave;
   end;
 end;
 
@@ -1418,7 +1422,7 @@ begin
   LArg:=TEZArg.Create(AName,AArg,AOnFinishCall,AOnFinishNestedCall,AOnFinish);
 
   //enter critical section to avoid collisions
-  Critical.Enter;
+  FCritical.Enter;
   try
     //we need to add a new arg
     if I < 0 then
@@ -1443,7 +1447,7 @@ begin
       FArgs[I]:=LArg;
     end;
   finally
-    Critical.Leave;
+    FCritical.Leave;
   end;
 
   //lastly return the thread
@@ -1592,14 +1596,10 @@ var
     LCallback: TThreadNestedCallback;
     LCaller: IEZThread;
   begin
+    {$IFDEF EZTHREAD_TRACE}WriteLn('Synchronize::Synched::', Self.ClassName, '[id]:', AThread.Settings.Await.ThreadID);{$ENDIF}
     LCaller := IEZThread(Pointer(PtrInt(AThread['thread'])));
-    try
-      {$IFDEF EZTHREAD_TRACE}WriteLn('Synchronize::Synched::', Self.ClassName, '[id]:', AThread.Settings.Await.ThreadID);{$ENDIF}
-      LCallback := PTThreadNestedCallback(Pointer(PtrInt(AThread['nested'])))^;
-      LCallback(LCaller);
-    finally
-      LCaller._Release;
-    end;
+    LCallback := PTThreadNestedCallback(Pointer(PtrInt(AThread['nested'])))^;
+    LCallback(LCaller);
   end;
 
 begin
@@ -1698,7 +1698,7 @@ begin
   //for await support, add ourself to the collection
   Collection.Add(LThread);
 
-  Critical.Enter;
+  FCritical.Enter;
   try
     //update state
     FState:=esStarted;
@@ -1709,7 +1709,7 @@ begin
     //start the monitor thread
     LMonThread.Start;
   finally
-    Critical.Leave;
+    FCritical.Leave;
   end;
 
   //allow children to handle after starting
@@ -1741,6 +1741,7 @@ end;
 
 constructor TEZThreadImpl.Create;
 begin
+  FCritical := TCriticalSection.Create;
   FStopMonitor := False;
   FState := esStopped;
   FMaxRunTime := 0;
@@ -1760,6 +1761,7 @@ end;
 destructor TEZThreadImpl.Destroy;
 begin
   {$IFDEF EZTHREAD_TRACE}WriteLn('Destroy::Start::', Self.Classname, '[id]:', FThreadID);{$ENDIF}
+  FCritical.Free;
   Stop;
   FMonitorThreads.Free;
   SetLength(FArgs,0);

@@ -79,7 +79,7 @@ var
 
     procedure UpdateUI(const AThread : IEZThread);
     begin
-      edit_test_synch.Text := AThread['message'];
+      MainForm.edit_test_synch.Text := AThread['message'];
     end;
 
   begin
