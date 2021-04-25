@@ -646,6 +646,9 @@ function NewEZThread : IEZThread;
 implementation
 uses
   syncobjs,
+  {$IfDef LCL}
+  Forms,
+  {$ENDIF}
   ezthreads.collection,
   ezthreads.pool;
 var
@@ -694,14 +697,26 @@ begin
   else
     //use thread id here to check against non-nil result
     while Collection.Threads[LThread.Settings.Await.ThreadID] <> nil do
+    begin
+      {$IfDef LCL}
+      if Assigned(Application) then
+        Application.ProcessMessages;
+      {$ENDIF}
       Sleep(ASleep);
+    end;
 end;
 
 procedure Await(const AGroupID: String;Const ASleep:Cardinal);
 begin
   //threads add and remove themselves from the collection, so
   while Collection.Exists(AGroupID) do
-    Sleep(ASleep)
+  begin
+    {$IfDef LCL}
+    if Assigned(Application) then
+      Application.ProcessMessages;
+    {$ENDIF}
+    Sleep(ASleep);
+  end;
 end;
 
 function NewEZThread: IEZThread;
